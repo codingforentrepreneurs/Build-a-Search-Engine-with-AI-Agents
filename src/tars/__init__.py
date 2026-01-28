@@ -20,6 +20,12 @@ def get_timestamp() -> str:
 
 
 def add_link(link: str) -> None:
+    from tars.db import db_add_link, is_db_configured
+
+    if is_db_configured():
+        db_add_link(link)
+        return
+
     file_exists = LINKS_FILE.exists()
     timestamp = get_timestamp()
     with open(LINKS_FILE, "a", newline="") as f:
@@ -41,6 +47,29 @@ def format_timestamp(ts: str) -> str:
 
 
 def list_links() -> None:
+    from tars.db import db_list_links, is_db_configured
+
+    if is_db_configured():
+        links = db_list_links()
+        if not links:
+            console.print("[dim]No links stored yet.[/dim]")
+            return
+
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("Link", style="cyan", overflow="fold")
+        table.add_column("Title", style="white", overflow="fold")
+        table.add_column("Added", style="green", no_wrap=True)
+        table.add_column("Updated", style="yellow", no_wrap=True)
+
+        for row in links:
+            added = format_timestamp(row.get("added_at", ""))
+            updated = format_timestamp(row.get("updated_at", ""))
+            title = row.get("title") or "-"
+            table.add_row(row["url"], title, added, updated)
+
+        console.print(table)
+        return
+
     if not LINKS_FILE.exists():
         console.print("[dim]No links stored yet.[/dim]")
         return
@@ -66,6 +95,16 @@ def list_links() -> None:
 
 
 def remove_link(identifier: str) -> None:
+    from tars.db import db_remove_link, is_db_configured
+
+    if is_db_configured():
+        # Database mode: URL only (no index support)
+        if db_remove_link(identifier):
+            console.print(f"[red]Removed:[/red] {identifier}")
+        else:
+            console.print(f"[red]Link not found:[/red] {identifier}")
+        return
+
     if not LINKS_FILE.exists():
         console.print("[dim]No links stored yet.[/dim]")
         return
@@ -151,6 +190,45 @@ def clean_list() -> None:
         console.print("[dim]No duplicates found.[/dim]")
 
 
+def search_links(query: str, limit: int = 10) -> None:
+    from tars.db import db_search, is_db_configured
+
+    if not is_db_configured():
+        console.print("[red]Search requires database configuration.[/red]")
+        console.print("Set DATABASE_URL or PG* environment variables.")
+        return
+
+    results = db_search(query, limit)
+    if not results:
+        console.print(f"[dim]No results for:[/dim] {query}")
+        return
+
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Link", style="cyan", overflow="fold")
+    table.add_column("Title", style="white", overflow="fold")
+    table.add_column("Score", style="magenta", justify="right")
+
+    for row in results:
+        title = row.get("title") or "-"
+        score = f"{row['score']:.4f}" if row.get("score") is not None else "-"
+        table.add_row(row["url"], title, score)
+
+    console.print(table)
+
+
+def handle_db_command(args) -> None:
+    from tars.db import db_init, db_migrate, db_status
+
+    if args.db_command == "init":
+        db_init()
+    elif args.db_command == "migrate":
+        db_migrate()
+    elif args.db_command == "status":
+        db_status()
+    else:
+        console.print("[red]Unknown db command.[/red] Use: init, migrate, status")
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="tars",
@@ -172,20 +250,43 @@ def main():
     subparsers.add_parser("list", help="List all stored links")
     subparsers.add_parser("clean-list", help="Remove duplicate links")
 
+    # Database commands
+    db_parser = subparsers.add_parser("db", help="Database management commands")
+    db_subparsers = db_parser.add_subparsers(dest="db_command")
+    db_subparsers.add_parser("init", help="Initialize database schema")
+    db_subparsers.add_parser("migrate", help="Import links from CSV to database")
+    db_subparsers.add_parser("status", help="Show database connection status")
+
+    # Search command
+    search_parser = subparsers.add_parser("search", help="Search links using BM25 full-text search")
+    search_parser.add_argument("query", help="Search query")
+    search_parser.add_argument("-n", "--limit", type=int, default=10, help="Maximum results (default: 10)")
+
     args = parser.parse_args()
 
-    if args.command == "add":
-        add_link(args.link)
-    elif args.command == "remove":
-        remove_link(args.identifier)
-    elif args.command == "update":
-        update_link_timestamp(args.link)
-    elif args.command == "list":
-        list_links()
-    elif args.command == "clean-list":
-        clean_list()
-    else:
-        parser.print_help()
+    try:
+        if args.command == "add":
+            add_link(args.link)
+        elif args.command == "remove":
+            remove_link(args.identifier)
+        elif args.command == "update":
+            update_link_timestamp(args.link)
+        elif args.command == "list":
+            list_links()
+        elif args.command == "clean-list":
+            clean_list()
+        elif args.command == "db":
+            if args.db_command:
+                handle_db_command(args)
+            else:
+                db_parser.print_help()
+        elif args.command == "search":
+            search_links(args.query, args.limit)
+        else:
+            parser.print_help()
+    except RuntimeError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        return 1
 
     return 0
 
