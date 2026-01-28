@@ -4,8 +4,11 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
+
+load_dotenv()
 
 console = Console()
 
