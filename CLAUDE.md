@@ -36,3 +36,7 @@ Single-module CLI app in `src/tars/__init__.py`:
 - Python 3.12+
 - `rich` for terminal output formatting
 - Uses `uv` for package management
+
+## Git Commits
+
+- Never add "Co-Authored-By" lines to commit messages
