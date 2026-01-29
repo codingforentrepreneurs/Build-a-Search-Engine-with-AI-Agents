@@ -4,11 +4,52 @@
 
 Transform **tars** from a simple link manager into a personal search engine powered by PostgreSQL full-text search (pg_textsearch) on TigerData.com's cloud infrastructure.
 
-## Current State
+## Project Status
 
-- CLI tool for managing links in a local CSV file
-- Commands: `add`, `list`, `remove`, `update`, `clean-list`
-- Data: URL + timestamps stored in `links.csv`
+### ✅ Phase 1: MVP - Database + Search (COMPLETE)
+- [x] PostgreSQL driver (`psycopg[binary]`)
+- [x] `tars db init` - creates schema with BM25 search index
+- [x] `tars db migrate` - imports CSV links to database
+- [x] `tars db status` - shows connection info and stats
+- [x] `tars search <query>` - BM25 full-text search
+- [x] `tars add/list/remove` updated to use database when configured
+
+### ✅ Phase 2: Crawling Pipeline (COMPLETE)
+- [x] Playwright for headless browser crawling
+- [x] Content extraction (title, meta description, body text)
+- [x] `tars crawl <url>` - crawl specific URL
+- [x] `tars crawl --all` - re-crawl all links
+- [x] `tars crawl --missing` - crawl never-crawled links (default)
+- [x] `tars crawl --old N` - crawl stale links (N days old)
+- [x] Auto-update search index on crawl (via generated column)
+- [x] HTTP status and crawl error tracking
+
+### 🔲 Phase 3: Enhanced Metadata (NOT STARTED)
+- [ ] `--tags` flag on `add` and `update` commands
+- [ ] `--notes` flag on `add` and `update` commands
+- [ ] `--tag` filter on `search` command
+- [ ] Tag management: `tars tags list`, `tars tags rename`, etc.
+
+### 🔲 Phase 4: Offline/Sync (NOT STARTED)
+- [ ] Extended CSV with `sync_status` column
+- [ ] `tars sync` command (bidirectional)
+- [ ] `tars sync --push` / `--pull` (one-way)
+- [ ] Conflict resolution (remote wins default)
+- [ ] Graceful offline fallback
+
+### 🔲 Phase 5: Multi-user (FUTURE)
+- [ ] User/auth model
+- [ ] Tenant isolation
+- [ ] API layer
+
+---
+
+## Current State (Post Phase 1+2)
+
+- CLI tool with database-backed storage (TigerData PostgreSQL)
+- Commands: `add`, `list`, `remove`, `update`, `clean-list`, `search`, `crawl`, `db`
+- Data: URL, title, description, content, timestamps stored in PostgreSQL with BM25 index
+- Local CSV still works as fallback when DATABASE_URL not set
 
 ## Target Architecture
 
@@ -28,61 +69,77 @@ Transform **tars** from a simple link manager into a personal search engine powe
 ## Data Model
 
 ### links table
-| Column       | Type         | Description                          |
-|--------------|--------------|--------------------------------------|
-| id           | UUID         | Primary key                          |
-| url          | TEXT         | Unique URL                           |
-| title        | TEXT         | Page title (crawled)                 |
-| content      | TEXT         | Extracted page text (crawled)        |
-| notes        | TEXT         | User-provided notes/description      |
-| tags         | TEXT[]       | User-assigned tags for filtering     |
-| added_at     | TIMESTAMPTZ  | When link was added                  |
-| updated_at   | TIMESTAMPTZ  | Last metadata update                 |
-| crawled_at   | TIMESTAMPTZ  | Last successful crawl (NULL if never)|
-| search_vector| TSVECTOR     | pg_textsearch index (auto-generated) |
+| Column       | Type         | Description                          | Status |
+|--------------|--------------|--------------------------------------|--------|
+| id           | UUID         | Primary key                          | ✅     |
+| url          | TEXT         | Unique URL                           | ✅     |
+| title        | TEXT         | Page title (crawled)                 | ✅     |
+| description  | TEXT         | Meta description (crawled)           | ✅     |
+| content      | TEXT         | Extracted page text (crawled)        | ✅     |
+| notes        | TEXT         | User-provided notes/description      | schema ✅, CLI 🔲 |
+| tags         | TEXT[]       | User-assigned tags for filtering     | schema ✅, CLI 🔲 |
+| added_at     | TIMESTAMPTZ  | When link was added                  | ✅     |
+| updated_at   | TIMESTAMPTZ  | Last metadata update                 | ✅     |
+| crawled_at   | TIMESTAMPTZ  | Last successful crawl (NULL if never)| ✅     |
+| http_status  | INTEGER      | HTTP response code from crawl        | ✅     |
+| crawl_error  | TEXT         | Error message if crawl failed        | ✅     |
+| search_text  | TEXT         | Generated column for BM25 search     | ✅     |
 
-### search_vector composition
+### search_text composition (BM25)
 ```sql
--- Weighted: title (A), tags (B), notes (C), content (D)
-search_vector =
-  setweight(to_tsvector('english', coalesce(title, '')), 'A') ||
-  setweight(to_tsvector('english', coalesce(array_to_string(tags, ' '), '')), 'B') ||
-  setweight(to_tsvector('english', coalesce(notes, '')), 'C') ||
-  setweight(to_tsvector('english', coalesce(content, '')), 'D')
+-- Generated column combining all searchable text with URL tokenization
+search_text = REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+    COALESCE(url, '') || ' ' ||
+    COALESCE(title, '') || ' ' ||
+    COALESCE(description, '') || ' ' ||
+    COALESCE(content, '') || ' ' ||
+    COALESCE(notes, ''),
+'.', ' '), '/', ' '), '-', ' '), '_', ' '), ':', ' '), '//', ' ')
+
+-- BM25 index for full-text search
+CREATE INDEX links_search_bm25_idx ON links USING bm25(search_text);
 ```
+
+**Note:** Uses pg_textsearch BM25 instead of native TSVECTOR for better ranking.
 
 ## CLI Commands
 
-### Existing (updated)
+### Implemented ✅
 ```bash
-tars add <url> [--tags tag1,tag2] [--notes "..."]   # Add link (local + remote)
-tars list [--tag <tag>] [--limit N]                 # List links
-tars remove <id|url>                                # Remove link
-tars update <url> [--tags ...] [--notes "..."]      # Update metadata
-```
+# Core CRUD
+tars add <url>                         # Add link (local + remote)
+tars list                              # List all stored links
+tars remove <id|url>                   # Remove by index or URL
+tars update <url>                      # Update timestamp (CSV only)
+tars clean-list                        # Remove duplicates (CSV only)
 
-### New Commands
-```bash
 # Search
-tars search <query>                    # Full-text search
-tars search <query> --tag <tag>        # Search with tag filter
-tars search "exact phrase"             # Phrase search (pg_textsearch native)
+tars search <query>                    # BM25 full-text search
+tars search <query> -n 20              # Limit results
 
 # Crawling
 tars crawl <url>                       # Crawl specific URL
 tars crawl --all                       # Crawl all links
-tars crawl --stale [--days N]          # Crawl links not crawled in N days (default: 7)
-tars crawl --pending                   # Crawl links never crawled
-
-# Sync (local CSV <-> remote DB)
-tars sync                              # Push local changes to remote, pull remote to local
-tars sync --push                       # Push local CSV to remote only
-tars sync --pull                       # Pull remote to local CSV only
+tars crawl --missing                   # Crawl never-crawled (default)
+tars crawl --old N                     # Crawl stale links (N days)
 
 # Database
-tars db init                           # Initialize schema on TigerData
-tars db migrate                        # Run pending migrations
-tars db status                         # Show connection status and stats
+tars db init                           # Initialize schema
+tars db migrate                        # Import CSV to database
+tars db status                         # Show connection info
+```
+
+### Not Yet Implemented 🔲
+```bash
+# Phase 3: Metadata
+tars add <url> --tags tag1,tag2        # Add with tags
+tars add <url> --notes "..."           # Add with notes
+tars search <query> --tag <tag>        # Search with tag filter
+
+# Phase 4: Sync
+tars sync                              # Bidirectional sync
+tars sync --push                       # Push local to remote
+tars sync --pull                       # Pull remote to local
 ```
 
 ## Configuration
