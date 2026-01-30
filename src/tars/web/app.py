@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from tars import db
-from tars.web.routes import search_router, links_router, crawl_router, db_router
+from tars.web.routes import search_router, links_router, crawl_router, db_router, help_router
 
 # Configuration
 WEB_HOST = os.environ.get("TARS_WEB_HOST", "127.0.0.1")
@@ -221,6 +221,7 @@ def create_app(debug: bool | None = None) -> FastAPI:
     app.include_router(links_router)  # prefix already in router
     app.include_router(crawl_router)  # prefix already in router
     app.include_router(db_router)     # prefix already in router
+    app.include_router(help_router)
 
     return app
 
