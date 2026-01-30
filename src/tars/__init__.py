@@ -608,6 +608,12 @@ def main():
     web_parser.add_argument("--reload", action="store_true", help="Enable auto-reload for development")
     web_parser.add_argument("--open", dest="open_browser", action="store_true", help="Open browser automatically")
 
+    # MCP server command
+    mcp_parser = subparsers.add_parser("mcp", help="Start MCP server for LLM tool access")
+    mcp_parser.add_argument("--sse", action="store_true", help="Run as HTTP/SSE server (for Claude Code remote)")
+    mcp_parser.add_argument("--host", default="127.0.0.1", help="Host to bind to (default: 127.0.0.1)")
+    mcp_parser.add_argument("--port", type=int, default=8000, help="Port to bind to (default: 8000)")
+
     args = parser.parse_args()
 
     try:
@@ -655,6 +661,10 @@ def main():
                 reload=args.reload,
                 open_browser=args.open_browser,
             )
+        elif args.command == "mcp":
+            from tars.mcp import main as mcp_main
+            transport = "sse" if args.sse else "stdio"
+            mcp_main(transport=transport, host=args.host, port=args.port)
         else:
             parser.print_help()
     except RuntimeError as e:

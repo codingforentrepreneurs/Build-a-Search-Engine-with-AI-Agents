@@ -424,7 +424,7 @@ def db_list_links(limit: int = 10, offset: int = 0) -> tuple[list[dict], int, in
             # Get paginated links, ordered by last updated
             cur.execute(
                 """
-                SELECT url, title, added_at, updated_at
+                SELECT id, url, title, added_at, updated_at, crawled_at, crawl_error, hidden
                 FROM links
                 ORDER BY updated_at DESC NULLS LAST
                 LIMIT %s OFFSET %s
@@ -435,10 +435,14 @@ def db_list_links(limit: int = 10, offset: int = 0) -> tuple[list[dict], int, in
 
     links = [
         {
-            "url": row[0],
-            "title": row[1],
-            "added_at": row[2].isoformat() if row[2] else None,
-            "updated_at": row[3].isoformat() if row[3] else None,
+            "id": str(row[0]),
+            "url": row[1],
+            "title": row[2],
+            "added_at": row[3].isoformat() if row[3] else None,
+            "updated_at": row[4].isoformat() if row[4] else None,
+            "crawled_at": row[5].isoformat() if row[5] else None,
+            "crawl_error": row[6],
+            "hidden": row[7],
         }
         for row in rows
     ]
