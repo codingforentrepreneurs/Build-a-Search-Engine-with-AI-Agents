@@ -1,14 +1,50 @@
 """Interactive setup wizard for tars."""
 
+import re
 import shutil
 import time
 import webbrowser
+from pathlib import Path
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 
 console = Console()
+
+
+def _slugify(text: str, max_length: int = 10) -> str:
+    """Convert text to a valid bot name slug.
+
+    - Lowercase
+    - Replace spaces and special chars with hyphens
+    - Remove consecutive hyphens
+    - Truncate to max_length
+    """
+    # Lowercase and replace non-alphanumeric with hyphens
+    slug = re.sub(r"[^a-z0-9]+", "-", text.lower())
+    # Remove leading/trailing hyphens
+    slug = slug.strip("-")
+    # Collapse multiple hyphens
+    slug = re.sub(r"-+", "-", slug)
+    # Truncate (but don't cut in middle of word if possible)
+    if len(slug) > max_length:
+        slug = slug[:max_length].rstrip("-")
+    return slug
+
+
+def _get_default_name() -> str:
+    """Get suggested default bot name from folder name or 'tars'."""
+    folder_name = Path.cwd().name
+    slugified = _slugify(folder_name)
+
+    # Use slugified folder name if it's valid, otherwise fall back to 'tars'
+    if len(slugified) >= 2 and slugified.lower() not in RESERVED_NAMES:
+        # Also check it doesn't conflict with existing commands
+        if slugified == "tars" or not shutil.which(slugified):
+            return slugified
+
+    return "tars"
 
 TIGER_SIGNUP_URL = "https://tsdb.co/jm-pgtextsearch"
 
@@ -132,8 +168,9 @@ def run_setup() -> None:
     console.print("[bold]Step 1:[/bold] Name your bot")
     console.print("  [dim]This will be the command you use (e.g., 'mybot search \"query\"')[/dim]")
 
+    default_name = _get_default_name()
     while True:
-        name = Prompt.ask("  Bot name", default="tars")
+        name = Prompt.ask("  Bot name", default=default_name)
 
         # Validate name
         available, message = _check_name_available(name)
