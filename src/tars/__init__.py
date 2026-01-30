@@ -539,6 +539,74 @@ def handle_vector_command(args) -> None:
         console.print("[red]Usage:[/red] tars db vector <init|status|embed>")
 
 
+def show_help() -> None:
+    """Display all commands with examples."""
+    console.print("[bold cyan]tars[/bold cyan] - Personal search engine CLI\n")
+
+    sections = [
+        (
+            "Link Management",
+            [
+                ("add <url>", "Add a new link", "tars add https://example.com"),
+                ("list", "List stored links", "tars list -n 20 -p 2"),
+                ("remove <id|url>", "Remove by URL or glob pattern", "tars remove https://example.com\ntars remove '*.pdf'"),
+                ("update <url>", "Update timestamp for a link", "tars update https://example.com"),
+                ("clean-list", "Remove duplicate links", "tars clean-list"),
+            ],
+        ),
+        (
+            "Search",
+            [
+                ("search <query>", "Hybrid search (BM25 + vector)", "tars search \"python async\"\ntars search \"api\" --keyword-weight 0.7 --vector-weight 0.3"),
+                ("text_search <query>", "BM25 full-text search only", "tars text_search \"database\""),
+                ("vector <query>", "Semantic vector search only", "tars vector \"machine learning concepts\""),
+            ],
+        ),
+        (
+            "Crawling",
+            [
+                ("crawl", "Crawl uncrawled links", "tars crawl"),
+                ("crawl <url>", "Crawl a specific URL", "tars crawl https://example.com"),
+                ("crawl --all", "Re-crawl all links", "tars crawl --all"),
+                ("crawl --missing", "Crawl links never crawled", "tars crawl --missing"),
+                ("crawl --old N", "Crawl links not crawled in N days", "tars crawl --old 7"),
+            ],
+        ),
+        (
+            "Database",
+            [
+                ("db init", "Initialize database schema", "tars db init"),
+                ("db migrate", "Import links from CSV", "tars db migrate"),
+                ("db status", "Show database status", "tars db status"),
+                ("db vector init", "Initialize vector column/index", "tars db vector init"),
+                ("db vector embed", "Generate embeddings", "tars db vector embed\ntars db vector embed -n 100"),
+                ("db vector status", "Show embedding status", "tars db vector status"),
+            ],
+        ),
+        (
+            "Server",
+            [
+                ("web", "Start web interface", "tars web\ntars web --port 3000 --open"),
+                ("mcp", "Start MCP server (stdio)", "tars mcp"),
+                ("mcp --sse", "Start MCP server (HTTP/SSE)", "tars mcp --sse --port 8000"),
+            ],
+        ),
+    ]
+
+    for section_name, commands in sections:
+        console.print(f"[bold yellow]{section_name}[/bold yellow]")
+        for cmd, desc, example in commands:
+            console.print(f"  [green]{cmd}[/green]")
+            console.print(f"    {desc}")
+            for line in example.split("\n"):
+                console.print(f"    [dim]$ {line}[/dim]")
+        console.print()
+
+    console.print("[bold yellow]Options[/bold yellow]")
+    console.print("  [green]--version[/green]  Show version")
+    console.print("  [green]--help[/green]     Show argparse help\n")
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="tars",
@@ -547,6 +615,9 @@ def main():
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     subparsers = parser.add_subparsers(dest="command")
+
+    # Help command
+    subparsers.add_parser("help", help="Show all commands with examples")
 
     add_parser = subparsers.add_parser("add", help="Add a link")
     add_parser.add_argument("link", help="The link to add")
@@ -617,7 +688,9 @@ def main():
     args = parser.parse_args()
 
     try:
-        if args.command == "add":
+        if args.command == "help":
+            show_help()
+        elif args.command == "add":
             add_link(args.link)
         elif args.command == "remove":
             remove_link(args.identifier)
@@ -666,7 +739,7 @@ def main():
             transport = "sse" if args.sse else "stdio"
             mcp_main(transport=transport, host=args.host, port=args.port)
         else:
-            parser.print_help()
+            show_help()
     except RuntimeError as e:
         console.print(f"[red]Error:[/red] {e}")
         return 1
