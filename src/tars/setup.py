@@ -1,5 +1,6 @@
 """Interactive setup wizard for tars."""
 
+import shutil
 import time
 import webbrowser
 
@@ -15,6 +16,51 @@ TIGER_SIGNUP_URL = "https://tsdb.co/jm-pgtextsearch"
 # New cloud databases can take 1-2 minutes for DNS to propagate
 MAX_AUTO_RETRIES = 6
 RETRY_DELAY_SECONDS = 10
+
+# Reserved names that cannot be used as bot names
+RESERVED_NAMES = {
+    # Python/system
+    "python", "python3", "pip", "uv", "uvx",
+    # Common shells/tools
+    "bash", "sh", "zsh", "fish", "cmd", "powershell",
+    # Common CLI tools
+    "git", "npm", "node", "yarn", "pnpm", "docker", "kubectl",
+    "curl", "wget", "ssh", "scp", "rsync",
+    # Filesystem
+    "ls", "cd", "cp", "mv", "rm", "mkdir", "cat", "grep", "find", "head", "tail",
+    # System
+    "sudo", "su", "which", "where", "echo", "test", "true", "false",
+    # Database
+    "psql", "pg_dump", "postgres", "redis", "mysql",
+}
+
+
+def _check_name_available(name: str) -> tuple[bool, str]:
+    """Check if a bot name is available (not conflicting with system commands).
+
+    Returns (available, message).
+    """
+    name_lower = name.lower()
+
+    # Check reserved names
+    if name_lower in RESERVED_NAMES:
+        return (False, f"'{name}' is a reserved system command")
+
+    # Check for invalid characters
+    if not name.replace("-", "").replace("_", "").isalnum():
+        return (False, "Name can only contain letters, numbers, hyphens, and underscores")
+
+    # Check length
+    if len(name) < 2:
+        return (False, "Name must be at least 2 characters")
+    if len(name) > 32:
+        return (False, "Name must be 32 characters or less")
+
+    # Check if command exists in PATH (but allow 'tars' since that's the current name)
+    if name_lower != "tars" and shutil.which(name):
+        return (False, f"'{name}' already exists as a command on your system")
+
+    return (True, "OK")
 
 
 def _wait_for_database(url: str, max_retries: int = MAX_AUTO_RETRIES) -> tuple[bool, str]:
@@ -39,20 +85,62 @@ def _wait_for_database(url: str, max_retries: int = MAX_AUTO_RETRIES) -> tuple[b
     return (False, message)
 
 
+def _show_overview() -> bool:
+    """Show setup overview and get user confirmation.
+
+    Returns True if user wants to proceed.
+    """
+    console.print()
+    console.print(Panel(
+        "[bold cyan]tars setup wizard[/bold cyan]\n\n"
+        "This wizard will:\n"
+        "  [bold]1.[/bold] Choose a name for your bot (optional rename)\n"
+        "  [bold]2.[/bold] Configure your database connection\n"
+        "  [bold]3.[/bold] Initialize database schema and vector search\n\n"
+        "[bold yellow]Files that may be modified:[/bold yellow]\n"
+        "  • [cyan].env[/cyan] - Database connection string\n"
+        "  • [cyan]pyproject.toml[/cyan] - Package name (if renaming)\n"
+        "  • [cyan]README.md, CLAUDE.md[/cyan] - Documentation (if renaming)\n"
+        "  • [cyan]src/tars/*.py[/cyan] - Source files (if renaming)\n\n"
+        "[bold yellow]Recovery if something goes wrong:[/bold yellow]\n"
+        "  • Reset all changes: [dim]git checkout .[/dim]\n"
+        "  • Re-run setup: [dim]uv run tars setup[/dim]\n"
+        "  • Manual DB init: [dim]uv run tars db init[/dim]\n"
+        "  • Manual vector init: [dim]uv run tars db vector init[/dim]",
+        title="Setup Overview",
+        style="cyan",
+    ))
+    console.print()
+
+    return Confirm.ask("Ready to proceed?", default=True)
+
+
 def run_setup() -> None:
     """Run the interactive setup wizard."""
     from tars.config import create_env_file, test_connection, validate_database_url
     from tars.db import db_init, db_init_vectorizer
     from tars.rename import rename_bot
 
-    # Welcome
-    console.print()
-    console.print(Panel("Welcome to tars setup!", style="cyan"))
+    # Show overview and get confirmation
+    if not _show_overview():
+        console.print("[yellow]Setup cancelled.[/yellow]")
+        return
+
     console.print()
 
     # Step 1: Bot name
     console.print("[bold]Step 1:[/bold] Name your bot")
-    name = Prompt.ask("  Bot name", default="tars")
+    console.print("  [dim]This will be the command you use (e.g., 'mybot search \"query\"')[/dim]")
+
+    while True:
+        name = Prompt.ask("  Bot name", default="tars")
+
+        # Validate name
+        available, message = _check_name_available(name)
+        if not available:
+            console.print(f"  [red]Invalid name:[/red] {message}")
+            continue
+        break
 
     if name != "tars":
         console.print(f"\n  Renaming bot to [cyan]{name}[/cyan]...")
