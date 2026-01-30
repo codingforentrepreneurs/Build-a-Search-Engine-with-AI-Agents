@@ -248,7 +248,13 @@ def crawl_links(
 ) -> None:
     """Crawl links and store extracted content in database."""
     from tars.crawl import crawl_page
-    from tars.db import db_get_links_to_crawl, db_update_crawl_data, is_db_configured
+    from tars.db import (
+        db_generate_embeddings,
+        db_get_links_to_crawl,
+        db_update_crawl_data,
+        db_vectorizer_status,
+        is_db_configured,
+    )
 
     if not is_db_configured():
         console.print("[red]Crawl requires database configuration.[/red]")
@@ -304,6 +310,17 @@ def crawl_links(
 
     console.print(f"\n[bold]Done:[/bold] {success_count} succeeded, {error_count} failed")
 
+    # Auto-generate embeddings if vector search is configured
+    if success_count > 0:
+        status = db_vectorizer_status()
+        if status.get("configured"):
+            console.print("\n[dim]Generating embeddings...[/dim]")
+            embed_success, embed_errors = db_generate_embeddings()
+            if embed_success > 0:
+                console.print(f"[green]Generated {embed_success} embedding(s)[/green]")
+            if embed_errors > 0:
+                console.print(f"[yellow]{embed_errors} embedding(s) failed[/yellow]")
+
 
 def handle_db_command(args) -> None:
     from tars.db import db_init, db_migrate, db_status
@@ -316,6 +333,97 @@ def handle_db_command(args) -> None:
         db_status()
     else:
         console.print("[red]Unknown db command.[/red] Use: init, migrate, status")
+
+
+def vector_search(query: str, limit: int = 10) -> None:
+    """Perform semantic search using vector embeddings."""
+    from tars.db import db_vector_search, is_db_configured
+
+    if not is_db_configured():
+        console.print("[red]Vector search requires database configuration.[/red]")
+        console.print("Set DATABASE_URL or PG* environment variables.")
+        return
+
+    results = db_vector_search(query, limit)
+    if not results:
+        console.print(f"[dim]No results for:[/dim] {query}")
+        return
+
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Link", style="cyan", overflow="fold")
+    table.add_column("Title", style="white", overflow="fold")
+    table.add_column("Distance", style="magenta", justify="right")
+
+    for row in results:
+        title = row.get("title") or "-"
+        distance = f"{row['distance']:.4f}" if row.get("distance") is not None else "-"
+        table.add_row(row["url"], title, distance)
+
+    console.print(table)
+
+
+def embed_links(limit: int | None = None) -> None:
+    """Generate embeddings for links that don't have them."""
+    from tars.db import db_generate_embeddings, db_vectorizer_status, is_db_configured
+
+    if not is_db_configured():
+        console.print("[red]Embed requires database configuration.[/red]")
+        return
+
+    status = db_vectorizer_status()
+    if not status.get("configured"):
+        console.print("[red]Vector search not initialized.[/red]")
+        console.print("Run: tars vector init")
+        return
+
+    pending = status.get("pending_items", 0)
+    if pending == 0:
+        console.print("[dim]All links already have embeddings.[/dim]")
+        return
+
+    to_process = limit if limit else pending
+    console.print(f"[bold]Generating embeddings for {to_process} link(s)...[/bold]")
+
+    success, errors = db_generate_embeddings(limit)
+
+    console.print(f"\n[bold]Done:[/bold] {success} succeeded, {errors} failed")
+
+
+def handle_vector_command(args) -> None:
+    from tars.db import db_init_vectorizer, db_vectorizer_status, is_db_configured
+
+    if not is_db_configured():
+        console.print("[red]Vector commands require database configuration.[/red]")
+        console.print("Set DATABASE_URL or PG* environment variables.")
+        return
+
+    cmd = args.query_or_cmd
+
+    if cmd == "init":
+        db_init_vectorizer()
+    elif cmd == "status":
+        status = db_vectorizer_status()
+        if not status.get("configured"):
+            console.print("[yellow]Vector search not configured.[/yellow]")
+            console.print("Run: tars vector init")
+            return
+
+        console.print("[green]Vector search:[/green] configured")
+        console.print(f"[dim]Links:[/dim] {status.get('link_count')}")
+        console.print(f"[dim]Embeddings:[/dim] {status.get('embedding_count')}")
+        pending = status.get('pending_items', 0)
+        if pending > 0:
+            console.print(f"[yellow]Pending:[/yellow] {pending} links need embeddings")
+            console.print("[dim]Run: tars vector embed[/dim]")
+        else:
+            console.print("[green]Pending:[/green] 0 (all links embedded)")
+    elif cmd == "embed":
+        embed_links(args.limit)
+    elif cmd:
+        # Treat as search query
+        vector_search(cmd, args.limit)
+    else:
+        console.print("[red]Usage:[/red] tars vector \"<query>\" | init | status | embed")
 
 
 def main():
@@ -345,6 +453,10 @@ def main():
     db_subparsers.add_parser("init", help="Initialize database schema")
     db_subparsers.add_parser("migrate", help="Import links from CSV to database")
     db_subparsers.add_parser("status", help="Show database connection status")
+    # Vector subcommand under db
+    vector_parser = db_subparsers.add_parser("vector", help="Semantic vector search: tars db vector \"<query>\"")
+    vector_parser.add_argument("query_or_cmd", nargs="?", help="Search query or command (init|status|embed)")
+    vector_parser.add_argument("-n", "--limit", type=int, default=10, help="Maximum results (default: 10)")
 
     # Search command
     search_parser = subparsers.add_parser("search", help="Search links using BM25 full-text search")
@@ -357,6 +469,11 @@ def main():
     crawl_parser.add_argument("--all", action="store_true", dest="crawl_all", help="Crawl all links")
     crawl_parser.add_argument("--missing", action="store_true", help="Crawl links never crawled (default)")
     crawl_parser.add_argument("--old", type=int, metavar="DAYS", help="Crawl links not crawled in N days")
+
+    # Top-level vector search shortcut: tars vector "<query>"
+    vector_search_parser = subparsers.add_parser("vector", help="Semantic vector search: tars vector \"<query>\"")
+    vector_search_parser.add_argument("query", help="Search query")
+    vector_search_parser.add_argument("-n", "--limit", type=int, default=10, help="Maximum results (default: 10)")
 
     args = parser.parse_args()
 
@@ -372,7 +489,9 @@ def main():
         elif args.command == "clean-list":
             clean_list()
         elif args.command == "db":
-            if args.db_command:
+            if args.db_command == "vector":
+                handle_vector_command(args)
+            elif args.db_command:
                 handle_db_command(args)
             else:
                 db_parser.print_help()
@@ -385,6 +504,8 @@ def main():
                 missing=args.missing,
                 old_days=args.old,
             )
+        elif args.command == "vector":
+            vector_search(args.query, args.limit)
         else:
             parser.print_help()
     except RuntimeError as e:

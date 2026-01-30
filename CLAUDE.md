@@ -30,6 +30,12 @@ tars db init             # Initialize database schema
 tars db migrate          # Import links from CSV to database
 tars db status           # Show database connection status
 
+# Vector search (semantic search using AI embeddings)
+tars vector "<query>"    # Semantic search (shortcut)
+tars db vector init      # Initialize vector column and HNSW index
+tars db vector embed     # Generate embeddings (uses Tiger Cloud's OpenAI key)
+tars db vector status    # Show embedding status
+
 # For development without global install
 uv run tars <command>
 ```
@@ -43,6 +49,7 @@ CLI app with modules in `src/tars/`:
 
 Storage:
 - Primary: PostgreSQL with pg_textsearch BM25 index
+- Vector search: pgvector with HNSW index, embeddings via pgai (Tiger Cloud)
 - Fallback: `links.csv` when DATABASE_URL not set
 
 ## Dependencies

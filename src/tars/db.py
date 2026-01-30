@@ -67,8 +67,11 @@ def db_init() -> None:
     """Initialize database schema with pg_textsearch extension and links table."""
     with get_connection() as conn:
         with conn.cursor() as cur:
-            # Create extension
+            # Create extensions
             cur.execute("CREATE EXTENSION IF NOT EXISTS pg_textsearch;")
+            cur.execute("CREATE EXTENSION IF NOT EXISTS ai CASCADE;")
+            cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+            cur.execute("CREATE EXTENSION IF NOT EXISTS vectorscale CASCADE;")
 
             # Check if table exists
             cur.execute("""
@@ -305,7 +308,11 @@ def db_remove_links_pattern(pattern: str) -> list[str]:
 
 
 def db_search(query: str, limit: int = 10) -> list[dict]:
-    """Search links using BM25 full-text search on search_text."""
+    """Search links using BM25 full-text search on search_text.
+
+    BM25 returns negative scores where lower (more negative) = better match.
+    Score of 0 means no match.
+    """
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -313,10 +320,11 @@ def db_search(query: str, limit: int = 10) -> list[dict]:
                 SELECT url, title, description, added_at,
                        search_text <@> to_bm25query(%s, 'links_search_bm25_idx') as score
                 FROM links
+                WHERE search_text <@> to_bm25query(%s, 'links_search_bm25_idx') < 0
                 ORDER BY score
                 LIMIT %s
                 """,
-                (query, limit),
+                (query, query, limit),
             )
             rows = cur.fetchall()
 
@@ -326,7 +334,7 @@ def db_search(query: str, limit: int = 10) -> list[dict]:
             "title": row[1],
             "description": row[2],
             "added_at": row[3].isoformat() if row[3] else None,
-            "score": row[4],
+            "score": abs(row[4]),  # Convert to positive for display
         }
         for row in rows
     ]
@@ -399,3 +407,181 @@ def db_get_links_to_crawl(
                 return []
 
             return [row[0] for row in cur.fetchall()]
+
+
+def db_init_vectorizer() -> None:
+    """Initialize vector column and HNSW index for semantic search on links."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # Check if embedding column exists
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns
+                    WHERE table_name = 'links' AND column_name = 'embedding'
+                );
+            """)
+            has_embedding = cur.fetchone()[0]
+
+            if has_embedding:
+                console.print("[dim]Vector column already exists.[/dim]")
+            else:
+                # Add embedding column (1536 dimensions for text-embedding-3-small)
+                cur.execute("""
+                    ALTER TABLE links
+                    ADD COLUMN embedding vector(1536);
+                """)
+                console.print("[green]Added embedding column.[/green]")
+
+            # Create HNSW index for fast similarity search
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS links_embedding_hnsw_idx
+                ON links USING hnsw (embedding vector_cosine_ops);
+            """)
+            conn.commit()
+
+    console.print("[green]Vector search initialized.[/green]")
+    console.print("[dim]Run 'tars vector embed' to generate embeddings for links.[/dim]")
+
+
+def db_vectorizer_status() -> dict:
+    """Get vector embedding status."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # Check if embedding column exists
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns
+                    WHERE table_name = 'links' AND column_name = 'embedding'
+                );
+            """)
+            if not cur.fetchone()[0]:
+                return {"configured": False}
+
+            # Count links with and without embeddings
+            cur.execute("""
+                SELECT
+                    COUNT(*) as total,
+                    COUNT(embedding) as with_embedding
+                FROM links;
+            """)
+            row = cur.fetchone()
+            total = row[0]
+            with_embedding = row[1]
+
+            return {
+                "configured": True,
+                "link_count": total,
+                "embedding_count": with_embedding,
+                "pending_items": total - with_embedding,
+            }
+
+
+def db_generate_embeddings(limit: int | None = None) -> tuple[int, int]:
+    """Generate embeddings for links missing them using ai.openai_embed().
+
+    Returns (success_count, error_count).
+    Uses Tiger Cloud's managed OpenAI API key.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # Get links without embeddings
+            query = """
+                SELECT id, search_text
+                FROM links
+                WHERE embedding IS NULL
+                AND search_text IS NOT NULL
+                AND search_text != ''
+            """
+            if limit:
+                query += f" LIMIT {limit}"
+
+            cur.execute(query)
+            rows = cur.fetchall()
+
+            if not rows:
+                return (0, 0)
+
+            success = 0
+            errors = 0
+
+            for link_id, search_text in rows:
+                try:
+                    # Truncate text if too long (OpenAI limit ~8k tokens)
+                    text = search_text[:30000] if search_text else ""
+
+                    # Use Tiger Cloud's managed API key (no api_key param needed)
+                    cur.execute(
+                        """
+                        UPDATE links
+                        SET embedding = ai.openai_embed(
+                            'text-embedding-3-small',
+                            %s
+                        )::vector(1536)
+                        WHERE id = %s;
+                        """,
+                        (text, link_id),
+                    )
+                    conn.commit()
+                    success += 1
+                except Exception as e:
+                    conn.rollback()
+                    errors += 1
+                    console.print(f"[red]Error embedding {link_id}:[/red] {e}")
+
+            return (success, errors)
+
+
+def db_vector_search(query: str, limit: int = 10, max_distance: float = 0.8) -> list[dict]:
+    """Search links using vector similarity (semantic search).
+
+    Uses Tiger Cloud's managed OpenAI API key.
+    Only returns results with distance <= max_distance (default 0.8).
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # Check if embedding column exists
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns
+                    WHERE table_name = 'links' AND column_name = 'embedding'
+                );
+            """)
+            if not cur.fetchone()[0]:
+                raise RuntimeError(
+                    "Vector search not initialized. Run: tars vector init"
+                )
+
+            # Generate embedding for query and search using cosine similarity
+            # Uses Tiger Cloud's managed API key (no api_key param needed)
+            # Filter by max_distance to only return relevant results
+            cur.execute(
+                """
+                WITH query_embed AS (
+                    SELECT ai.openai_embed('text-embedding-3-small', %s)::vector(1536) AS vec
+                )
+                SELECT
+                    url,
+                    title,
+                    description,
+                    added_at,
+                    embedding <=> query_embed.vec AS distance
+                FROM links, query_embed
+                WHERE embedding IS NOT NULL
+                AND embedding <=> query_embed.vec <= %s
+                ORDER BY distance
+                LIMIT %s;
+                """,
+                (query, max_distance, limit),
+            )
+            rows = cur.fetchall()
+
+    return [
+        {
+            "url": row[0],
+            "title": row[1],
+            "description": row[2],
+            "added_at": row[3].isoformat() if row[3] else None,
+            "distance": row[4],
+        }
+        for row in rows
+    ]
