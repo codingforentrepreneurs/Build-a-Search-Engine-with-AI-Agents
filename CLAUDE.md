@@ -18,7 +18,7 @@ tars list                # List all stored links
 tars remove <id|url>     # Remove by index number or URL
 tars update <url>        # Update timestamp for a link
 tars clean-list          # Remove duplicate links
-tars search <query>      # Search links using BM25 full-text search
+tars text_search <query> # Search links using BM25 full-text search
 tars crawl               # Crawl uncrawled links (default: --missing)
 tars crawl <url>         # Crawl a specific URL
 tars crawl --all         # Re-crawl all links

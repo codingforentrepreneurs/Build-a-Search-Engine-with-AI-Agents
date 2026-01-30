@@ -397,7 +397,7 @@ def handle_vector_command(args) -> None:
         console.print("Set DATABASE_URL or PG* environment variables.")
         return
 
-    cmd = args.query_or_cmd
+    cmd = args.vector_cmd
 
     if cmd == "init":
         db_init_vectorizer()
@@ -419,11 +419,8 @@ def handle_vector_command(args) -> None:
             console.print("[green]Pending:[/green] 0 (all links embedded)")
     elif cmd == "embed":
         embed_links(args.limit)
-    elif cmd:
-        # Treat as search query
-        vector_search(cmd, args.limit)
     else:
-        console.print("[red]Usage:[/red] tars vector \"<query>\" | init | status | embed")
+        console.print("[red]Usage:[/red] tars db vector <init|status|embed>")
 
 
 def main():
@@ -454,14 +451,14 @@ def main():
     db_subparsers.add_parser("migrate", help="Import links from CSV to database")
     db_subparsers.add_parser("status", help="Show database connection status")
     # Vector subcommand under db
-    vector_parser = db_subparsers.add_parser("vector", help="Semantic vector search: tars db vector \"<query>\"")
-    vector_parser.add_argument("query_or_cmd", nargs="?", help="Search query or command (init|status|embed)")
-    vector_parser.add_argument("-n", "--limit", type=int, default=10, help="Maximum results (default: 10)")
+    vector_db_parser = db_subparsers.add_parser("vector", help="Vector embedding management")
+    vector_db_parser.add_argument("vector_cmd", nargs="?", help="Command: init | status | embed")
+    vector_db_parser.add_argument("-n", "--limit", type=int, default=10, help="Limit for embed command")
 
-    # Search command
-    search_parser = subparsers.add_parser("search", help="Search links using BM25 full-text search")
-    search_parser.add_argument("query", help="Search query")
-    search_parser.add_argument("-n", "--limit", type=int, default=10, help="Maximum results (default: 10)")
+    # Text search command (BM25)
+    text_search_parser = subparsers.add_parser("text_search", help="Search links using BM25 full-text search")
+    text_search_parser.add_argument("query", help="Search query")
+    text_search_parser.add_argument("-n", "--limit", type=int, default=10, help="Maximum results (default: 10)")
 
     # Crawl command
     crawl_parser = subparsers.add_parser("crawl", help="Crawl links and extract content")
@@ -495,7 +492,7 @@ def main():
                 handle_db_command(args)
             else:
                 db_parser.print_help()
-        elif args.command == "search":
+        elif args.command == "text_search":
             search_links(args.query, args.limit)
         elif args.command == "crawl":
             crawl_links(
