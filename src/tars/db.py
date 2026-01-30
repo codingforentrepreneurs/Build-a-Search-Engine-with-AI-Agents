@@ -251,20 +251,44 @@ def db_add_link(url: str) -> None:
                 console.print(f"[yellow]Already exists:[/yellow] {url}")
 
 
-def db_list_links() -> list[dict]:
-    """List all links from database."""
+def db_list_links(limit: int = 10, offset: int = 0) -> tuple[list[dict], int, int]:
+    """List links from database with pagination.
+
+    Returns: (links, total_count, pending_embeddings)
+    """
     with get_connection() as conn:
         with conn.cursor() as cur:
+            # Get total count
+            cur.execute("SELECT COUNT(*) FROM links")
+            total_count = cur.fetchone()[0]
+
+            # Get pending embeddings count (if column exists)
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns
+                    WHERE table_name = 'links' AND column_name = 'embedding'
+                );
+            """)
+            has_embedding_col = cur.fetchone()[0]
+            if has_embedding_col:
+                cur.execute("SELECT COUNT(*) FROM links WHERE embedding IS NULL")
+                pending_embeddings = cur.fetchone()[0]
+            else:
+                pending_embeddings = 0
+
+            # Get paginated links, ordered by last updated
             cur.execute(
                 """
                 SELECT url, title, added_at, updated_at
                 FROM links
-                ORDER BY added_at DESC
-                """
+                ORDER BY updated_at DESC NULLS LAST
+                LIMIT %s OFFSET %s
+                """,
+                (limit, offset),
             )
             rows = cur.fetchall()
 
-    return [
+    links = [
         {
             "url": row[0],
             "title": row[1],
@@ -273,6 +297,7 @@ def db_list_links() -> list[dict]:
         }
         for row in rows
     ]
+    return links, total_count, pending_embeddings
 
 
 def db_remove_link(url: str) -> bool:
@@ -307,28 +332,43 @@ def db_remove_links_pattern(pattern: str) -> list[str]:
             return urls
 
 
-def db_search(query: str, limit: int = 10) -> list[dict]:
+def db_search(query: str, limit: int = 10, offset: int = 0) -> tuple[list[dict], int]:
     """Search links using BM25 full-text search on search_text.
 
     BM25 returns negative scores where lower (more negative) = better match.
     Score of 0 means no match.
+
+    Returns (results, total_count).
     """
     with get_connection() as conn:
         with conn.cursor() as cur:
+            # Get total count first (exclude 4xx/5xx error pages)
+            cur.execute(
+                """
+                SELECT COUNT(*)
+                FROM links
+                WHERE search_text <@> to_bm25query(%s, 'links_search_bm25_idx') < 0
+                AND (http_status IS NULL OR http_status < 400)
+                """,
+                (query,),
+            )
+            total_count = cur.fetchone()[0]
+
             cur.execute(
                 """
                 SELECT url, title, description, added_at,
                        search_text <@> to_bm25query(%s, 'links_search_bm25_idx') as score
                 FROM links
                 WHERE search_text <@> to_bm25query(%s, 'links_search_bm25_idx') < 0
+                AND (http_status IS NULL OR http_status < 400)
                 ORDER BY score
-                LIMIT %s
+                LIMIT %s OFFSET %s
                 """,
-                (query, query, limit),
+                (query, query, limit, offset),
             )
             rows = cur.fetchall()
 
-    return [
+    results = [
         {
             "url": row[0],
             "title": row[1],
@@ -338,6 +378,7 @@ def db_search(query: str, limit: int = 10) -> list[dict]:
         }
         for row in rows
     ]
+    return (results, total_count)
 
 
 def db_update_crawl_data(
@@ -523,17 +564,21 @@ def db_vectorizer_status() -> dict:
             }
 
 
-def db_generate_embeddings(limit: int | None = None) -> tuple[int, int]:
+def db_generate_embeddings(
+    limit: int | None = None, show_progress: bool = False
+) -> tuple[int, int]:
     """Generate embeddings for links missing them using ai.openai_embed().
 
     Returns (success_count, error_count).
     Uses Tiger Cloud's managed OpenAI API key.
     """
+    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+
     with get_connection() as conn:
         with conn.cursor() as cur:
             # Get links without embeddings
             query = """
-                SELECT id, search_text
+                SELECT id, url, search_text
                 FROM links
                 WHERE embedding IS NULL
                 AND search_text IS NOT NULL
@@ -551,38 +596,76 @@ def db_generate_embeddings(limit: int | None = None) -> tuple[int, int]:
             success = 0
             errors = 0
 
-            for link_id, search_text in rows:
-                try:
-                    # Truncate text if too long (OpenAI limit ~8k tokens)
-                    text = search_text[:30000] if search_text else ""
+            if show_progress:
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    TaskProgressColumn(),
+                    console=console,
+                ) as progress:
+                    task = progress.add_task("Embedding...", total=len(rows))
 
-                    # Use Tiger Cloud's managed API key (no api_key param needed)
-                    cur.execute(
-                        """
-                        UPDATE links
-                        SET embedding = ai.openai_embed(
-                            'text-embedding-3-small',
-                            %s
-                        )::vector(1536)
-                        WHERE id = %s;
-                        """,
-                        (text, link_id),
-                    )
-                    conn.commit()
-                    success += 1
-                except Exception as e:
-                    conn.rollback()
-                    errors += 1
-                    console.print(f"[red]Error embedding {link_id}:[/red] {e}")
+                    for link_id, url, search_text in rows:
+                        # Show truncated URL in progress
+                        display_url = url[:50] + "..." if len(url) > 50 else url
+                        progress.update(task, description=f"[dim]{display_url}[/dim]")
+
+                        try:
+                            text = search_text[:30000] if search_text else ""
+                            cur.execute(
+                                """
+                                UPDATE links
+                                SET embedding = ai.openai_embed(
+                                    'text-embedding-3-small',
+                                    %s
+                                )::vector(1536)
+                                WHERE id = %s;
+                                """,
+                                (text, link_id),
+                            )
+                            conn.commit()
+                            success += 1
+                        except Exception as e:
+                            conn.rollback()
+                            errors += 1
+                            progress.console.print(f"[red]Error:[/red] {display_url}: {e}")
+
+                        progress.advance(task)
+            else:
+                for link_id, url, search_text in rows:
+                    try:
+                        text = search_text[:30000] if search_text else ""
+                        cur.execute(
+                            """
+                            UPDATE links
+                            SET embedding = ai.openai_embed(
+                                'text-embedding-3-small',
+                                %s
+                            )::vector(1536)
+                            WHERE id = %s;
+                            """,
+                            (text, link_id),
+                        )
+                        conn.commit()
+                        success += 1
+                    except Exception as e:
+                        conn.rollback()
+                        errors += 1
+                        console.print(f"[red]Error embedding {link_id}:[/red] {e}")
 
             return (success, errors)
 
 
-def db_vector_search(query: str, limit: int = 10, max_distance: float = 0.8) -> list[dict]:
+def db_vector_search(
+    query: str, limit: int = 10, offset: int = 0, max_distance: float = 0.8
+) -> tuple[list[dict], int]:
     """Search links using vector similarity (semantic search).
 
     Uses Tiger Cloud's managed OpenAI API key.
     Only returns results with distance <= max_distance (default 0.8).
+
+    Returns (results, total_count).
     """
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -601,6 +684,7 @@ def db_vector_search(query: str, limit: int = 10, max_distance: float = 0.8) -> 
             # Generate embedding for query and search using cosine similarity
             # Uses Tiger Cloud's managed API key (no api_key param needed)
             # Filter by max_distance to only return relevant results
+            # Exclude 4xx/5xx error pages
             cur.execute(
                 """
                 WITH query_embed AS (
@@ -615,14 +699,31 @@ def db_vector_search(query: str, limit: int = 10, max_distance: float = 0.8) -> 
                 FROM links, query_embed
                 WHERE embedding IS NOT NULL
                 AND embedding <=> query_embed.vec <= %s
+                AND (http_status IS NULL OR http_status < 400)
                 ORDER BY distance
-                LIMIT %s;
+                LIMIT %s OFFSET %s;
                 """,
-                (query, max_distance, limit),
+                (query, max_distance, limit, offset),
             )
             rows = cur.fetchall()
 
-    return [
+            # Get total count of matching results
+            cur.execute(
+                """
+                WITH query_embed AS (
+                    SELECT ai.openai_embed('text-embedding-3-small', %s)::vector(1536) AS vec
+                )
+                SELECT COUNT(*)
+                FROM links, query_embed
+                WHERE embedding IS NOT NULL
+                AND embedding <=> query_embed.vec <= %s
+                AND (http_status IS NULL OR http_status < 400);
+                """,
+                (query, max_distance),
+            )
+            total_count = cur.fetchone()[0]
+
+    results = [
         {
             "url": row[0],
             "title": row[1],
@@ -632,15 +733,18 @@ def db_vector_search(query: str, limit: int = 10, max_distance: float = 0.8) -> 
         }
         for row in rows
     ]
+    return (results, total_count)
 
 
 def db_hybrid_search(
     query: str,
     limit: int = 10,
+    offset: int = 0,
     keyword_weight: float = 0.5,
     vector_weight: float = 0.5,
     rrf_k: int = 60,
-) -> list[dict]:
+    min_score: float = 0.005,
+) -> tuple[list[dict], int]:
     """Search links using hybrid search combining BM25 and vector similarity.
 
     Uses Reciprocal Rank Fusion (RRF) to merge rankings from keyword (BM25)
@@ -649,11 +753,13 @@ def db_hybrid_search(
     Args:
         query: Search query string
         limit: Maximum number of results to return
+        offset: Number of results to skip (for pagination)
         keyword_weight: Weight for BM25 keyword search (0-1)
         vector_weight: Weight for vector semantic search (0-1)
         rrf_k: RRF constant (default 60, higher values smooth out ranking differences)
+        min_score: Minimum RRF score to include in results (default 0.005)
 
-    Returns list of results with combined RRF scores.
+    Returns (results, total_count) with combined RRF scores.
     """
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -673,6 +779,7 @@ def db_hybrid_search(
 
             # Hybrid search using RRF (Reciprocal Rank Fusion)
             # Combines BM25 keyword ranking with vector similarity ranking
+            # Filters by minimum RRF score to exclude irrelevant results
             cur.execute(
                 """
                 WITH query_embed AS (
@@ -683,6 +790,7 @@ def db_hybrid_search(
                            ROW_NUMBER() OVER (ORDER BY embedding <=> query_embed.vec) AS rank
                     FROM links, query_embed
                     WHERE embedding IS NOT NULL
+                    AND (http_status IS NULL OR http_status < 400)
                     ORDER BY embedding <=> query_embed.vec
                     LIMIT 20
                 ),
@@ -693,24 +801,31 @@ def db_hybrid_search(
                            ) AS rank
                     FROM links
                     WHERE search_text <@> to_bm25query(%s, 'links_search_bm25_idx') < 0
+                    AND (http_status IS NULL OR http_status < 400)
                     ORDER BY search_text <@> to_bm25query(%s, 'links_search_bm25_idx')
                     LIMIT 20
+                ),
+                combined AS (
+                    SELECT
+                        l.id,
+                        l.url,
+                        l.title,
+                        l.description,
+                        l.added_at,
+                        COALESCE(v.rank, 999) AS vector_rank,
+                        COALESCE(k.rank, 999) AS keyword_rank,
+                        %s * COALESCE(1.0 / (%s + v.rank), 0.0) +
+                        %s * COALESCE(1.0 / (%s + k.rank), 0.0) AS rrf_score
+                    FROM links l
+                    LEFT JOIN vector_search v ON l.id = v.id
+                    LEFT JOIN keyword_search k ON l.id = k.id
+                    WHERE v.id IS NOT NULL OR k.id IS NOT NULL
                 )
-                SELECT
-                    l.url,
-                    l.title,
-                    l.description,
-                    l.added_at,
-                    COALESCE(v.rank, 999) AS vector_rank,
-                    COALESCE(k.rank, 999) AS keyword_rank,
-                    %s * COALESCE(1.0 / (%s + v.rank), 0.0) +
-                    %s * COALESCE(1.0 / (%s + k.rank), 0.0) AS rrf_score
-                FROM links l
-                LEFT JOIN vector_search v ON l.id = v.id
-                LEFT JOIN keyword_search k ON l.id = k.id
-                WHERE v.id IS NOT NULL OR k.id IS NOT NULL
+                SELECT url, title, description, added_at, vector_rank, keyword_rank, rrf_score
+                FROM combined
+                WHERE rrf_score >= %s
                 ORDER BY rrf_score DESC
-                LIMIT %s;
+                LIMIT %s OFFSET %s;
                 """,
                 (
                     query,  # for embedding
@@ -721,12 +836,68 @@ def db_hybrid_search(
                     rrf_k,
                     keyword_weight,
                     rrf_k,
+                    min_score,
                     limit,
+                    offset,
                 ),
             )
             rows = cur.fetchall()
 
-    return [
+            # Get total count of results meeting min_score threshold
+            cur.execute(
+                """
+                WITH query_embed AS (
+                    SELECT ai.openai_embed('text-embedding-3-small', %s)::vector(1536) AS vec
+                ),
+                vector_search AS (
+                    SELECT id,
+                           ROW_NUMBER() OVER (ORDER BY embedding <=> query_embed.vec) AS rank
+                    FROM links, query_embed
+                    WHERE embedding IS NOT NULL
+                    AND (http_status IS NULL OR http_status < 400)
+                    ORDER BY embedding <=> query_embed.vec
+                    LIMIT 20
+                ),
+                keyword_search AS (
+                    SELECT id,
+                           ROW_NUMBER() OVER (
+                               ORDER BY search_text <@> to_bm25query(%s, 'links_search_bm25_idx')
+                           ) AS rank
+                    FROM links
+                    WHERE search_text <@> to_bm25query(%s, 'links_search_bm25_idx') < 0
+                    AND (http_status IS NULL OR http_status < 400)
+                    ORDER BY search_text <@> to_bm25query(%s, 'links_search_bm25_idx')
+                    LIMIT 20
+                ),
+                combined AS (
+                    SELECT
+                        l.id,
+                        %s * COALESCE(1.0 / (%s + v.rank), 0.0) +
+                        %s * COALESCE(1.0 / (%s + k.rank), 0.0) AS rrf_score
+                    FROM links l
+                    LEFT JOIN vector_search v ON l.id = v.id
+                    LEFT JOIN keyword_search k ON l.id = k.id
+                    WHERE v.id IS NOT NULL OR k.id IS NOT NULL
+                )
+                SELECT COUNT(*)
+                FROM combined
+                WHERE rrf_score >= %s;
+                """,
+                (
+                    query,
+                    query,
+                    query,
+                    query,
+                    vector_weight,
+                    rrf_k,
+                    keyword_weight,
+                    rrf_k,
+                    min_score,
+                ),
+            )
+            total_count = cur.fetchone()[0]
+
+    results = [
         {
             "url": row[0],
             "title": row[1],
@@ -738,3 +909,4 @@ def db_hybrid_search(
         }
         for row in rows
     ]
+    return (results, total_count)

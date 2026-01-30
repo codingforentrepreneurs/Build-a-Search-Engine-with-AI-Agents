@@ -59,11 +59,12 @@ def format_timestamp(ts: str) -> str:
         return ts
 
 
-def list_links() -> None:
+def list_links(limit: int = 10, page: int = 1) -> None:
     from tars.db import db_list_links, is_db_configured
 
     if is_db_configured():
-        links = db_list_links()
+        offset = (page - 1) * limit
+        links, total_count, pending_embeddings = db_list_links(limit, offset)
         if not links:
             console.print("[dim]No links stored yet.[/dim]")
             return
@@ -81,6 +82,13 @@ def list_links() -> None:
             table.add_row(row["url"], title, added, updated)
 
         console.print(table)
+
+        # Show summary stats
+        total_pages = (total_count + limit - 1) // limit
+        stats = f"[dim]Page {page}/{total_pages} • {total_count} total[/dim]"
+        if pending_embeddings > 0:
+            stats += f" • [yellow]{pending_embeddings} need embeddings[/yellow]"
+        console.print(stats)
         return
 
     if not LINKS_FILE.exists():
@@ -214,7 +222,7 @@ def clean_list() -> None:
         console.print("[dim]No duplicates found.[/dim]")
 
 
-def search_links(query: str, limit: int = 10) -> None:
+def search_links(query: str, limit: int = 10, page: int = 1) -> None:
     from tars.db import db_search, is_db_configured
 
     if not is_db_configured():
@@ -222,7 +230,8 @@ def search_links(query: str, limit: int = 10) -> None:
         console.print("Set DATABASE_URL or PG* environment variables.")
         return
 
-    results = db_search(query, limit)
+    offset = (page - 1) * limit
+    results, total_count = db_search(query, limit, offset)
     if not results:
         console.print(f"[dim]No results for:[/dim] {query}")
         return
@@ -238,6 +247,11 @@ def search_links(query: str, limit: int = 10) -> None:
         table.add_row(row["url"], title, score)
 
     console.print(table)
+
+    # Show pagination info
+    total_pages = (total_count + limit - 1) // limit
+    if total_pages > 1:
+        console.print(f"\n[dim]Page {page}/{total_pages} ({total_count} total results)[/dim]")
 
 
 def crawl_links(
@@ -339,7 +353,7 @@ def handle_db_command(args) -> None:
         console.print("[red]Unknown db command.[/red] Use: init, migrate, status")
 
 
-def vector_search(query: str, limit: int = 10) -> None:
+def vector_search(query: str, limit: int = 10, page: int = 1) -> None:
     """Perform semantic search using vector embeddings."""
     from tars.db import db_vector_search, is_db_configured
 
@@ -348,7 +362,8 @@ def vector_search(query: str, limit: int = 10) -> None:
         console.print("Set DATABASE_URL or PG* environment variables.")
         return
 
-    results = db_vector_search(query, limit)
+    offset = (page - 1) * limit
+    results, total_count = db_vector_search(query, limit, offset)
     if not results:
         console.print(f"[dim]No results for:[/dim] {query}")
         return
@@ -365,12 +380,19 @@ def vector_search(query: str, limit: int = 10) -> None:
 
     console.print(table)
 
+    # Show pagination info
+    total_pages = (total_count + limit - 1) // limit
+    if total_pages > 1:
+        console.print(f"\n[dim]Page {page}/{total_pages} ({total_count} total results)[/dim]")
+
 
 def hybrid_search(
     query: str,
     limit: int = 10,
+    page: int = 1,
     keyword_weight: float = 0.5,
     vector_weight: float = 0.5,
+    min_score: float = 0.005,
 ) -> None:
     """Perform hybrid search combining BM25 keyword and vector semantic search."""
     from tars.db import db_hybrid_search, is_db_configured
@@ -380,7 +402,10 @@ def hybrid_search(
         console.print("Set DATABASE_URL or PG* environment variables.")
         return
 
-    results = db_hybrid_search(query, limit, keyword_weight, vector_weight)
+    offset = (page - 1) * limit
+    results, total_count = db_hybrid_search(
+        query, limit, offset, keyword_weight, vector_weight, min_score=min_score
+    )
     if not results:
         console.print(f"[dim]No results for:[/dim] {query}")
         return
@@ -400,6 +425,11 @@ def hybrid_search(
         table.add_row(row["url"], title, rrf, v_rank, k_rank)
 
     console.print(table)
+
+    # Show pagination info
+    total_pages = (total_count + limit - 1) // limit
+    if total_pages > 1:
+        console.print(f"\n[dim]Page {page}/{total_pages} ({total_count} total results)[/dim]")
 
 
 def embed_links(limit: int | None = None) -> None:
@@ -422,9 +452,9 @@ def embed_links(limit: int | None = None) -> None:
         return
 
     to_process = limit if limit else pending
-    console.print(f"[bold]Generating embeddings for {to_process} link(s)...[/bold]")
+    console.print(f"[bold]Generating embeddings for {to_process} link(s)...[/bold]\n")
 
-    success, errors = db_generate_embeddings(limit)
+    success, errors = db_generate_embeddings(limit, show_progress=True)
 
     console.print(f"\n[bold]Done:[/bold] {success} succeeded, {errors} failed")
 
@@ -481,7 +511,9 @@ def main():
     update_parser = subparsers.add_parser("update", help="Update the timestamp for a link")
     update_parser.add_argument("link", help="The link URL to update")
 
-    subparsers.add_parser("list", help="List all stored links")
+    list_parser = subparsers.add_parser("list", help="List stored links (most recent first)")
+    list_parser.add_argument("-n", "--limit", type=int, default=10, help="Results per page (default: 10)")
+    list_parser.add_argument("-p", "--page", type=int, default=1, help="Page number (default: 1)")
     subparsers.add_parser("clean-list", help="Remove duplicate links")
 
     # Database commands
@@ -493,12 +525,13 @@ def main():
     # Vector subcommand under db
     vector_db_parser = db_subparsers.add_parser("vector", help="Vector embedding management")
     vector_db_parser.add_argument("vector_cmd", nargs="?", help="Command: init | status | embed")
-    vector_db_parser.add_argument("-n", "--limit", type=int, default=10, help="Limit for embed command")
+    vector_db_parser.add_argument("-n", "--limit", type=int, help="Limit number of links to embed (default: all pending)")
 
     # Text search command (BM25)
     text_search_parser = subparsers.add_parser("text_search", help="Search links using BM25 full-text search")
     text_search_parser.add_argument("query", help="Search query")
     text_search_parser.add_argument("-n", "--limit", type=int, default=10, help="Maximum results (default: 10)")
+    text_search_parser.add_argument("-p", "--page", type=int, default=1, help="Page number (default: 1)")
 
     # Crawl command
     crawl_parser = subparsers.add_parser("crawl", help="Crawl links and extract content")
@@ -511,13 +544,16 @@ def main():
     vector_search_parser = subparsers.add_parser("vector", help="Semantic vector search: tars vector \"<query>\"")
     vector_search_parser.add_argument("query", help="Search query")
     vector_search_parser.add_argument("-n", "--limit", type=int, default=10, help="Maximum results (default: 10)")
+    vector_search_parser.add_argument("-p", "--page", type=int, default=1, help="Page number (default: 1)")
 
     # Hybrid search (combines BM25 + vector)
     search_parser = subparsers.add_parser("search", help="Hybrid search (BM25 + vector): tars search \"<query>\"")
     search_parser.add_argument("query", help="Search query")
     search_parser.add_argument("-n", "--limit", type=int, default=10, help="Maximum results (default: 10)")
+    search_parser.add_argument("-p", "--page", type=int, default=1, help="Page number (default: 1)")
     search_parser.add_argument("--keyword-weight", type=float, default=0.5, help="Weight for keyword/BM25 search (0-1, default: 0.5)")
     search_parser.add_argument("--vector-weight", type=float, default=0.5, help="Weight for vector/semantic search (0-1, default: 0.5)")
+    search_parser.add_argument("--min-score", type=float, default=0.005, help="Minimum RRF score threshold (default: 0.005)")
 
     args = parser.parse_args()
 
@@ -529,7 +565,7 @@ def main():
         elif args.command == "update":
             update_link_timestamp(args.link)
         elif args.command == "list":
-            list_links()
+            list_links(args.limit, args.page)
         elif args.command == "clean-list":
             clean_list()
         elif args.command == "db":
@@ -540,7 +576,7 @@ def main():
             else:
                 db_parser.print_help()
         elif args.command == "text_search":
-            search_links(args.query, args.limit)
+            search_links(args.query, args.limit, args.page)
         elif args.command == "crawl":
             crawl_links(
                 url=args.url,
@@ -549,13 +585,15 @@ def main():
                 old_days=args.old,
             )
         elif args.command == "vector":
-            vector_search(args.query, args.limit)
+            vector_search(args.query, args.limit, args.page)
         elif args.command == "search":
             hybrid_search(
                 args.query,
                 args.limit,
+                args.page,
                 args.keyword_weight,
                 args.vector_weight,
+                args.min_score,
             )
         else:
             parser.print_help()
