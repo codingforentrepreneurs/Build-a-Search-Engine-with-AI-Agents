@@ -1,5 +1,6 @@
 """Interactive setup wizard for tars."""
 
+import os
 import re
 import shutil
 import time
@@ -259,8 +260,9 @@ def run_setup() -> None:
             console.print("[yellow]Setup cancelled.[/yellow]")
             return
 
-    # Create .env file
+    # Create .env file and set environment variable for current process
     create_env_file(url, name)
+    os.environ["DATABASE_URL"] = url  # Set for current process (dotenv already loaded at startup)
     console.print("  [green]Created .env file[/green]\n")
 
     # Step 3: Initialize database
