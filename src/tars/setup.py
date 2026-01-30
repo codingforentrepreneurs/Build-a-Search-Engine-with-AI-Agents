@@ -12,8 +12,9 @@ console = Console()
 TIGER_SIGNUP_URL = "https://tsdb.co/jm-pgtextsearch"
 
 # Retry settings for database connection
-MAX_AUTO_RETRIES = 3
-RETRY_DELAY_SECONDS = 5
+# New cloud databases can take 1-2 minutes for DNS to propagate
+MAX_AUTO_RETRIES = 6
+RETRY_DELAY_SECONDS = 10
 
 
 def _wait_for_database(url: str, max_retries: int = MAX_AUTO_RETRIES) -> tuple[bool, str]:
