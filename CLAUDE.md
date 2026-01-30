@@ -36,6 +36,10 @@ tars db vector init      # Initialize vector column and HNSW index
 tars db vector embed     # Generate embeddings (uses Tiger Cloud's OpenAI key)
 tars db vector status    # Show embedding status
 
+# Hybrid search (combines BM25 keyword + vector semantic search using RRF)
+tars search "<query>"              # Hybrid search with equal weights
+tars search "<query>" --keyword-weight 0.7 --vector-weight 0.3  # Custom weights
+
 # For development without global install
 uv run tars <command>
 ```

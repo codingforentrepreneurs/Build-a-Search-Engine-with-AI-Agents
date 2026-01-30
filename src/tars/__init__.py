@@ -283,6 +283,7 @@ def crawl_links(
 
     success_count = 0
     error_count = 0
+    changed_count = 0
 
     for i, link_url in enumerate(urls, 1):
         console.print(f"[dim][{i}/{len(urls)}][/dim] {link_url}")
@@ -290,7 +291,7 @@ def crawl_links(
         result = crawl_page(link_url)
 
         # Update database with results
-        db_update_crawl_data(
+        updated, content_changed = db_update_crawl_data(
             url=link_url,
             title=result.title,
             description=result.description,
@@ -305,10 +306,13 @@ def crawl_links(
         else:
             status = f"[green]{result.http_status}[/green]" if result.http_status == 200 else f"[yellow]{result.http_status}[/yellow]"
             title_preview = (result.title[:50] + "...") if result.title and len(result.title) > 50 else (result.title or "-")
-            console.print(f"  {status} {title_preview}")
+            changed_indicator = " [cyan](changed)[/cyan]" if content_changed else ""
+            console.print(f"  {status} {title_preview}{changed_indicator}")
             success_count += 1
+            if content_changed:
+                changed_count += 1
 
-    console.print(f"\n[bold]Done:[/bold] {success_count} succeeded, {error_count} failed")
+    console.print(f"\n[bold]Done:[/bold] {success_count} succeeded, {error_count} failed, {changed_count} changed")
 
     # Auto-generate embeddings if vector search is configured
     if success_count > 0:
@@ -358,6 +362,42 @@ def vector_search(query: str, limit: int = 10) -> None:
         title = row.get("title") or "-"
         distance = f"{row['distance']:.4f}" if row.get("distance") is not None else "-"
         table.add_row(row["url"], title, distance)
+
+    console.print(table)
+
+
+def hybrid_search(
+    query: str,
+    limit: int = 10,
+    keyword_weight: float = 0.5,
+    vector_weight: float = 0.5,
+) -> None:
+    """Perform hybrid search combining BM25 keyword and vector semantic search."""
+    from tars.db import db_hybrid_search, is_db_configured
+
+    if not is_db_configured():
+        console.print("[red]Hybrid search requires database configuration.[/red]")
+        console.print("Set DATABASE_URL or PG* environment variables.")
+        return
+
+    results = db_hybrid_search(query, limit, keyword_weight, vector_weight)
+    if not results:
+        console.print(f"[dim]No results for:[/dim] {query}")
+        return
+
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Link", style="cyan", overflow="fold")
+    table.add_column("Title", style="white", overflow="fold")
+    table.add_column("RRF", style="magenta", justify="right")
+    table.add_column("V#", style="dim", justify="right")
+    table.add_column("K#", style="dim", justify="right")
+
+    for row in results:
+        title = row.get("title") or "-"
+        rrf = f"{row['rrf_score']:.4f}"
+        v_rank = str(row["vector_rank"]) if row["vector_rank"] < 999 else "-"
+        k_rank = str(row["keyword_rank"]) if row["keyword_rank"] < 999 else "-"
+        table.add_row(row["url"], title, rrf, v_rank, k_rank)
 
     console.print(table)
 
@@ -472,6 +512,13 @@ def main():
     vector_search_parser.add_argument("query", help="Search query")
     vector_search_parser.add_argument("-n", "--limit", type=int, default=10, help="Maximum results (default: 10)")
 
+    # Hybrid search (combines BM25 + vector)
+    search_parser = subparsers.add_parser("search", help="Hybrid search (BM25 + vector): tars search \"<query>\"")
+    search_parser.add_argument("query", help="Search query")
+    search_parser.add_argument("-n", "--limit", type=int, default=10, help="Maximum results (default: 10)")
+    search_parser.add_argument("--keyword-weight", type=float, default=0.5, help="Weight for keyword/BM25 search (0-1, default: 0.5)")
+    search_parser.add_argument("--vector-weight", type=float, default=0.5, help="Weight for vector/semantic search (0-1, default: 0.5)")
+
     args = parser.parse_args()
 
     try:
@@ -503,6 +550,13 @@ def main():
             )
         elif args.command == "vector":
             vector_search(args.query, args.limit)
+        elif args.command == "search":
+            hybrid_search(
+                args.query,
+                args.limit,
+                args.keyword_weight,
+                args.vector_weight,
+            )
         else:
             parser.print_help()
     except RuntimeError as e:

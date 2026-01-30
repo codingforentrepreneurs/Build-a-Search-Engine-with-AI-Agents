@@ -347,26 +347,73 @@ def db_update_crawl_data(
     content: str | None = None,
     http_status: int | None = None,
     crawl_error: str | None = None,
-) -> bool:
-    """Update a link with crawled data. Returns True if updated."""
+) -> tuple[bool, bool]:
+    """Update a link with crawled data.
+
+    Returns (updated, content_changed):
+    - updated: True if the row was updated
+    - content_changed: True if the content was different from before
+
+    Only clears the embedding (to trigger re-embedding) if content changed.
+    """
     with get_connection() as conn:
         with conn.cursor() as cur:
+            # Check if content changed (to decide whether to clear embedding)
             cur.execute(
-                """
-                UPDATE links
-                SET title = COALESCE(%s, title),
-                    description = COALESCE(%s, description),
-                    content = COALESCE(%s, content),
-                    http_status = %s,
-                    crawl_error = %s,
-                    crawled_at = NOW(),
-                    updated_at = NOW()
-                WHERE url = %s
-                """,
-                (title, description, content, http_status, crawl_error, url),
+                "SELECT content FROM links WHERE url = %s",
+                (url,),
             )
+            row = cur.fetchone()
+            if not row:
+                return (False, False)
+
+            old_content = row[0]
+            content_changed = content is not None and content != old_content
+
+            # Check if embedding column exists
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns
+                    WHERE table_name = 'links' AND column_name = 'embedding'
+                );
+            """)
+            has_embedding_col = cur.fetchone()[0]
+
+            if content_changed and has_embedding_col:
+                # Content changed - update and clear embedding for re-generation
+                cur.execute(
+                    """
+                    UPDATE links
+                    SET title = COALESCE(%s, title),
+                        description = COALESCE(%s, description),
+                        content = %s,
+                        http_status = %s,
+                        crawl_error = %s,
+                        crawled_at = NOW(),
+                        updated_at = NOW(),
+                        embedding = NULL
+                    WHERE url = %s
+                    """,
+                    (title, description, content, http_status, crawl_error, url),
+                )
+            else:
+                # Content unchanged or no embedding column - update without touching embedding
+                cur.execute(
+                    """
+                    UPDATE links
+                    SET title = COALESCE(%s, title),
+                        description = COALESCE(%s, description),
+                        content = COALESCE(%s, content),
+                        http_status = %s,
+                        crawl_error = %s,
+                        crawled_at = NOW(),
+                        updated_at = NOW()
+                    WHERE url = %s
+                    """,
+                    (title, description, content, http_status, crawl_error, url),
+                )
             conn.commit()
-            return cur.rowcount > 0
+            return (cur.rowcount > 0, content_changed)
 
 
 def db_get_links_to_crawl(
@@ -582,6 +629,112 @@ def db_vector_search(query: str, limit: int = 10, max_distance: float = 0.8) -> 
             "description": row[2],
             "added_at": row[3].isoformat() if row[3] else None,
             "distance": row[4],
+        }
+        for row in rows
+    ]
+
+
+def db_hybrid_search(
+    query: str,
+    limit: int = 10,
+    keyword_weight: float = 0.5,
+    vector_weight: float = 0.5,
+    rrf_k: int = 60,
+) -> list[dict]:
+    """Search links using hybrid search combining BM25 and vector similarity.
+
+    Uses Reciprocal Rank Fusion (RRF) to merge rankings from keyword (BM25)
+    and semantic (vector) search. RRF formula: 1 / (k + rank).
+
+    Args:
+        query: Search query string
+        limit: Maximum number of results to return
+        keyword_weight: Weight for BM25 keyword search (0-1)
+        vector_weight: Weight for vector semantic search (0-1)
+        rrf_k: RRF constant (default 60, higher values smooth out ranking differences)
+
+    Returns list of results with combined RRF scores.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # Check if embedding column exists for vector search
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns
+                    WHERE table_name = 'links' AND column_name = 'embedding'
+                );
+            """)
+            has_embedding = cur.fetchone()[0]
+
+            if not has_embedding:
+                raise RuntimeError(
+                    "Vector search not initialized. Run: tars db vector init"
+                )
+
+            # Hybrid search using RRF (Reciprocal Rank Fusion)
+            # Combines BM25 keyword ranking with vector similarity ranking
+            cur.execute(
+                """
+                WITH query_embed AS (
+                    SELECT ai.openai_embed('text-embedding-3-small', %s)::vector(1536) AS vec
+                ),
+                vector_search AS (
+                    SELECT id,
+                           ROW_NUMBER() OVER (ORDER BY embedding <=> query_embed.vec) AS rank
+                    FROM links, query_embed
+                    WHERE embedding IS NOT NULL
+                    ORDER BY embedding <=> query_embed.vec
+                    LIMIT 20
+                ),
+                keyword_search AS (
+                    SELECT id,
+                           ROW_NUMBER() OVER (
+                               ORDER BY search_text <@> to_bm25query(%s, 'links_search_bm25_idx')
+                           ) AS rank
+                    FROM links
+                    WHERE search_text <@> to_bm25query(%s, 'links_search_bm25_idx') < 0
+                    ORDER BY search_text <@> to_bm25query(%s, 'links_search_bm25_idx')
+                    LIMIT 20
+                )
+                SELECT
+                    l.url,
+                    l.title,
+                    l.description,
+                    l.added_at,
+                    COALESCE(v.rank, 999) AS vector_rank,
+                    COALESCE(k.rank, 999) AS keyword_rank,
+                    %s * COALESCE(1.0 / (%s + v.rank), 0.0) +
+                    %s * COALESCE(1.0 / (%s + k.rank), 0.0) AS rrf_score
+                FROM links l
+                LEFT JOIN vector_search v ON l.id = v.id
+                LEFT JOIN keyword_search k ON l.id = k.id
+                WHERE v.id IS NOT NULL OR k.id IS NOT NULL
+                ORDER BY rrf_score DESC
+                LIMIT %s;
+                """,
+                (
+                    query,  # for embedding
+                    query,  # for bm25 in ROW_NUMBER
+                    query,  # for bm25 in WHERE
+                    query,  # for bm25 in ORDER BY
+                    vector_weight,
+                    rrf_k,
+                    keyword_weight,
+                    rrf_k,
+                    limit,
+                ),
+            )
+            rows = cur.fetchall()
+
+    return [
+        {
+            "url": row[0],
+            "title": row[1],
+            "description": row[2],
+            "added_at": row[3].isoformat() if row[3] else None,
+            "vector_rank": row[4],
+            "keyword_rank": row[5],
+            "rrf_score": float(row[6]),
         }
         for row in rows
     ]
