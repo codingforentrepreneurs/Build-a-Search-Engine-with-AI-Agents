@@ -619,6 +619,9 @@ def main():
     # Help command
     subparsers.add_parser("help", help="Show all commands with examples")
 
+    # Setup wizard
+    subparsers.add_parser("setup", help="Run interactive setup wizard")
+
     add_parser = subparsers.add_parser("add", help="Add a link")
     add_parser.add_argument("link", help="The link to add")
 
@@ -690,6 +693,9 @@ def main():
     try:
         if args.command == "help":
             show_help()
+        elif args.command == "setup":
+            from tars.setup import run_setup
+            run_setup()
         elif args.command == "add":
             add_link(args.link)
         elif args.command == "remove":
