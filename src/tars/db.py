@@ -375,8 +375,13 @@ def db_cleanup_expired_cache() -> int:
             return deleted
 
 
-def db_add_link(url: str) -> None:
-    """Add a link to the database."""
+def db_add_link(url: str, silent: bool = False) -> None:
+    """Add a link to the database.
+
+    Args:
+        url: URL to add
+        silent: If True, suppress console output (for MCP server)
+    """
     with get_connection() as conn:
         with conn.cursor() as cur:
             try:
@@ -391,9 +396,11 @@ def db_add_link(url: str) -> None:
                 conn.commit()
                 # Invalidate search cache when new link added
                 db_invalidate_search_cache()
-                console.print(f"[green]Added:[/green] {url}")
+                if not silent:
+                    console.print(f"[green]Added:[/green] {url}")
             except psycopg.errors.UniqueViolation:
-                console.print(f"[yellow]Already exists:[/yellow] {url}")
+                if not silent:
+                    console.print(f"[yellow]Already exists:[/yellow] {url}")
 
 
 def db_list_links(limit: int = 10, offset: int = 0) -> tuple[list[dict], int, int]:

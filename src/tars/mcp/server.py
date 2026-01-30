@@ -4,7 +4,6 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
 from tars import db
-from tars.crawl import crawl_page
 from tars.mcp.models import (
     CrawlResult,
     DatabaseStatus,
@@ -240,7 +239,7 @@ def add_link(url: str) -> LinkDetails:
         raise ToolError(f"URL already exists: {url}")
 
     try:
-        db.db_add_link(url)
+        db.db_add_link(url, silent=True)
         # Fetch the newly created link
         link = db.db_get_link_by_url(url)
         if not link:
@@ -384,7 +383,7 @@ def remove_link(url: str) -> str:
 
 
 @mcp.tool()
-def crawl_link(url: str) -> CrawlResult:
+async def crawl_link(url: str) -> CrawlResult:
     """Crawl a URL to extract its content for improved search results.
 
     The link must already exist in the database. Crawling extracts title,
@@ -403,9 +402,17 @@ def crawl_link(url: str) -> CrawlResult:
     if not existing:
         raise ToolError(f"Link not found in database: {url}. Add it first with add_link.")
 
+    # Lazy import to avoid Playwright dependency at server startup
     try:
-        # Crawl the page
-        result = crawl_page(url)
+        from tars.crawl import crawl_page_async
+    except ImportError as e:
+        raise ToolError(
+            "Crawling requires Playwright. Install with: playwright install chromium"
+        ) from e
+
+    try:
+        # Crawl the page (async)
+        result = await crawl_page_async(url)
 
         # Update database with crawl results
         updated, content_changed = db.db_update_crawl_data(
@@ -427,6 +434,12 @@ def crawl_link(url: str) -> CrawlResult:
             content_changed=content_changed,
         )
     except Exception as e:
+        error_msg = str(e)
+        # Check for Playwright browser not installed error
+        if "Executable doesn't exist" in error_msg or "browserType.launch" in error_msg:
+            raise ToolError(
+                "Playwright browser not installed. Run: playwright install chromium"
+            ) from e
         raise ToolError(f"Crawl failed: {e}") from e
 
 
