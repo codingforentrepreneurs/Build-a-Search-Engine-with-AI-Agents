@@ -1,0 +1,33 @@
+<!-- Links List Partial -->
+<div class="space-y-2">
+    {% for link in links %}
+    {% include "links/partials/link_row.html" %}
+    {% else %}
+    <div class="text-center py-12 text-slate-500 dark:text-slate-400">
+        <p>No links found.</p>
+        <a href="/links/add" class="text-primary-500 hover:underline">Add your first link</a>
+    </div>
+    {% endfor %}
+</div>
+
+{% if total_pages > 1 %}
+<div class="mt-6 flex justify-center gap-2">
+    {% if page > 1 %}
+    <a href="?page={{ page - 1 }}&per_page={{ per_page }}&show_hidden={{ show_hidden }}"
+       hx-get="/links?page={{ page - 1 }}&per_page={{ per_page }}&show_hidden={{ show_hidden }}"
+       hx-target="#links-container"
+       class="px-3 py-2 bg-slate-100 dark:bg-slate-800 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700">
+        Previous
+    </a>
+    {% endif %}
+    <span class="px-3 py-2 text-slate-600 dark:text-slate-400">Page {{ page }} of {{ total_pages }}</span>
+    {% if page < total_pages %}
+    <a href="?page={{ page + 1 }}&per_page={{ per_page }}&show_hidden={{ show_hidden }}"
+       hx-get="/links?page={{ page + 1 }}&per_page={{ per_page }}&show_hidden={{ show_hidden }}"
+       hx-target="#links-container"
+       class="px-3 py-2 bg-slate-100 dark:bg-slate-800 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700">
+        Next
+    </a>
+    {% endif %}
+</div>
+{% endif %}

@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block title %}Add Link - tars{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-6">
+    {# Page header #}
+    <div class="flex items-center gap-4">
+        <a href="/links"
+           class="inline-flex items-center gap-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+            </svg>
+            Back
+        </a>
+        <h1 class="text-2xl font-bold text-slate-900 dark:text-slate-100">Add Link</h1>
+    </div>
+
+    {# Add link form #}
+    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+        <form hx-post="/links/add"
+              hx-target="#form-response"
+              hx-swap="innerHTML"
+              hx-indicator="#submit-indicator"
+              class="space-y-6">
+
+            {# URL input #}
+            <div>
+                <label for="url" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    URL <span class="text-red-500">*</span>
+                </label>
+                <input type="url"
+                       id="url"
+                       name="url"
+                       required
+                       placeholder="https://example.com/article"
+                       class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
+                       autocomplete="url"
+                       autofocus>
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Enter a valid URL starting with http:// or https://
+                </p>
+            </div>
+
+            {# Notes textarea #}
+            <div>
+                <label for="notes" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Notes <span class="text-slate-400 dark:text-slate-500 font-normal">(optional)</span>
+                </label>
+                <textarea id="notes"
+                          name="notes"
+                          rows="3"
+                          placeholder="Add any notes about this link..."
+                          class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors resize-y"></textarea>
+            </div>
+
+            {# Crawl checkbox #}
+            <div class="flex items-start gap-3">
+                <input type="checkbox"
+                       id="crawl_now"
+                       name="crawl_now"
+                       value="true"
+                       checked
+                       class="mt-1 w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-primary-600 focus:ring-primary-500 dark:bg-slate-700">
+                <div>
+                    <label for="crawl_now" class="block text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+                        Crawl immediately after adding
+                    </label>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">
+                        Fetch the page content right away to enable search
+                    </p>
+                </div>
+            </div>
+
+            {# Form response area (for HTMX responses) #}
+            <div id="form-response"></div>
+
+            {# Form actions #}
+            <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <a href="/links"
+                   class="inline-flex items-center justify-center px-4 py-2 text-slate-700 dark:text-slate-300 font-medium rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                    Cancel
+                </a>
+                <button type="submit"
+                        class="inline-flex items-center justify-center gap-2 px-6 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span id="submit-indicator" class="htmx-indicator">
+                        <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </span>
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                    </svg>
+                    Add Link
+                </button>
+            </div>
+        </form>
+    </div>
+
+    {# Tips section #}
+    <div class="bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700 p-4">
+        <h3 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Tips</h3>
+        <ul class="text-sm text-slate-600 dark:text-slate-400 space-y-1">
+            <li class="flex items-start gap-2">
+                <span class="text-primary-500 mt-0.5">-</span>
+                Paste any valid URL - articles, documentation, blog posts, etc.
+            </li>
+            <li class="flex items-start gap-2">
+                <span class="text-primary-500 mt-0.5">-</span>
+                Crawling extracts the page title, description, and content for search.
+            </li>
+            <li class="flex items-start gap-2">
+                <span class="text-primary-500 mt-0.5">-</span>
+                You can always crawl later from the link details page.
+            </li>
+        </ul>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Handle successful form submission - redirect to the new link
+    document.body.addEventListener('htmx:afterRequest', function(evt) {
+        if (evt.detail.requestConfig.path === '/links/add' && evt.detail.successful) {
+            // Check if response contains a redirect URL
+            const response = evt.detail.xhr.response;
+            if (response && response.includes('redirect:')) {
+                const redirectUrl = response.split('redirect:')[1].trim();
+                window.location.href = redirectUrl;
+            }
+        }
+    });
+
+    // Client-side URL validation feedback
+    document.getElementById('url').addEventListener('input', function(e) {
+        const url = e.target.value;
+        const isValid = url === '' || /^https?:\/\/.+/.test(url);
+
+        if (!isValid && url.length > 0) {
+            e.target.classList.add('border-red-500', 'focus:ring-red-500', 'focus:border-red-500');
+            e.target.classList.remove('border-slate-300', 'dark:border-slate-600', 'focus:ring-primary-500', 'focus:border-primary-500');
+        } else {
+            e.target.classList.remove('border-red-500', 'focus:ring-red-500', 'focus:border-red-500');
+            e.target.classList.add('border-slate-300', 'dark:border-slate-600', 'focus:ring-primary-500', 'focus:border-primary-500');
+        }
+    });
+</script>
+{% endblock %}

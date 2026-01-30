@@ -1,0 +1,30 @@
+<!-- Add Link Form Partial -->
+<form hx-post="/links/add" hx-target="#form-container" hx-swap="innerHTML" class="space-y-4">
+    {% if error %}
+    <div class="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300">
+        {{ error }}
+    </div>
+    {% endif %}
+
+    <div>
+        <label for="url" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">URL</label>
+        <input type="url" name="url" id="url" required value="{{ url or '' }}"
+               placeholder="https://example.com"
+               class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-primary-500 focus:border-transparent">
+    </div>
+
+    <div class="flex items-center gap-2">
+        <input type="checkbox" name="crawl_now" id="crawl_now" checked
+               class="rounded border-slate-300 dark:border-slate-600 text-primary-500 focus:ring-primary-500">
+        <label for="crawl_now" class="text-sm text-slate-700 dark:text-slate-300">Crawl immediately</label>
+    </div>
+
+    <div class="flex gap-3">
+        <button type="submit" class="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors">
+            Add Link
+        </button>
+        <a href="/links" class="px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">
+            Cancel
+        </a>
+    </div>
+</form>

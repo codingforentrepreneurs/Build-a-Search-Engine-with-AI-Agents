@@ -1,8 +1,11 @@
 """Database connection and operations for tars."""
 
 import csv
+import hashlib
+import json
 import os
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Generator
 
@@ -12,6 +15,9 @@ from rich.console import Console
 console = Console()
 
 LINKS_FILE = Path("links.csv")
+
+# Default cache TTL in seconds (1 hour)
+DEFAULT_CACHE_TTL = int(os.environ.get("TARS_CACHE_TTL", 3600))
 
 
 def get_db_config() -> dict:
@@ -93,6 +99,7 @@ def db_init() -> None:
                         content TEXT,
                         notes TEXT,
                         tags TEXT[],
+                        hidden BOOLEAN NOT NULL DEFAULT FALSE,
                         added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                         crawled_at TIMESTAMPTZ,
@@ -116,6 +123,7 @@ def db_init() -> None:
                     ("description", "ALTER TABLE links ADD COLUMN IF NOT EXISTS description TEXT;"),
                     ("http_status", "ALTER TABLE links ADD COLUMN IF NOT EXISTS http_status INTEGER;"),
                     ("crawl_error", "ALTER TABLE links ADD COLUMN IF NOT EXISTS crawl_error TEXT;"),
+                    ("hidden", "ALTER TABLE links ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT FALSE;"),
                 ]
 
                 for col_name, sql in migrations:
@@ -156,6 +164,30 @@ def db_init() -> None:
             cur.execute("""
                 CREATE INDEX IF NOT EXISTS links_search_bm25_idx
                 ON links USING bm25(search_text) WITH (text_config='simple');
+            """)
+
+            # Create search_cache table for hybrid search caching
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS search_cache (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    query_hash TEXT NOT NULL,
+                    query_text TEXT NOT NULL,
+                    keyword_weight NUMERIC(3,2) NOT NULL,
+                    vector_weight NUMERIC(3,2) NOT NULL,
+                    results JSONB NOT NULL,
+                    total_count INTEGER NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    expires_at TIMESTAMPTZ NOT NULL,
+                    UNIQUE(query_hash, keyword_weight, vector_weight)
+                );
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS search_cache_expires_idx
+                ON search_cache(expires_at);
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS search_cache_query_idx
+                ON search_cache(query_hash);
             """)
 
             conn.commit()
@@ -232,6 +264,117 @@ def db_status() -> None:
         console.print(f"[red]Connection failed:[/red] {e}")
 
 
+# =============================================================================
+# Search Cache Functions
+# =============================================================================
+
+
+def _compute_cache_key(query: str, keyword_weight: float, vector_weight: float) -> str:
+    """Compute SHA256 hash for cache key from query and weights."""
+    normalized = f"{query.lower().strip()}:{keyword_weight}:{vector_weight}"
+    return hashlib.sha256(normalized.encode()).hexdigest()
+
+
+def db_cache_search(
+    query: str,
+    keyword_weight: float,
+    vector_weight: float,
+    results: list[dict],
+    total_count: int,
+    ttl: int = DEFAULT_CACHE_TTL,
+) -> None:
+    """Store search results in cache.
+
+    Args:
+        query: The original search query
+        keyword_weight: BM25 keyword weight used
+        vector_weight: Vector similarity weight used
+        results: List of search result dictionaries
+        total_count: Total count of results
+        ttl: Time to live in seconds (default from TARS_CACHE_TTL env var or 1 hour)
+    """
+    query_hash = _compute_cache_key(query, keyword_weight, vector_weight)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO search_cache (query_hash, query_text, keyword_weight, vector_weight, results, total_count, expires_at)
+                VALUES (%s, %s, %s, %s, %s, %s, NOW() + INTERVAL '%s seconds')
+                ON CONFLICT (query_hash, keyword_weight, vector_weight)
+                DO UPDATE SET
+                    results = EXCLUDED.results,
+                    total_count = EXCLUDED.total_count,
+                    created_at = NOW(),
+                    expires_at = NOW() + INTERVAL '%s seconds'
+                """,
+                (query_hash, query, keyword_weight, vector_weight, json.dumps(results), total_count, ttl, ttl),
+            )
+            conn.commit()
+
+
+def db_get_cached_search(
+    query: str,
+    keyword_weight: float,
+    vector_weight: float,
+) -> tuple[list[dict], int] | None:
+    """Retrieve cached search results if not expired.
+
+    Args:
+        query: The search query
+        keyword_weight: BM25 keyword weight
+        vector_weight: Vector similarity weight
+
+    Returns:
+        (results, total_count) tuple if cache hit, None if miss or expired.
+    """
+    query_hash = _compute_cache_key(query, keyword_weight, vector_weight)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT results, total_count
+                FROM search_cache
+                WHERE query_hash = %s
+                AND keyword_weight = %s
+                AND vector_weight = %s
+                AND expires_at > NOW()
+                """,
+                (query_hash, keyword_weight, vector_weight),
+            )
+            row = cur.fetchone()
+            if row:
+                return (row[0], row[1])
+            return None
+
+
+def db_invalidate_search_cache() -> int:
+    """Clear all search cache entries.
+
+    Returns the number of entries deleted.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM search_cache")
+            deleted = cur.rowcount
+            conn.commit()
+            return deleted
+
+
+def db_cleanup_expired_cache() -> int:
+    """Remove expired cache entries.
+
+    Returns the number of entries deleted.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM search_cache WHERE expires_at <= NOW()")
+            deleted = cur.rowcount
+            conn.commit()
+            return deleted
+
+
 def db_add_link(url: str) -> None:
     """Add a link to the database."""
     with get_connection() as conn:
@@ -246,6 +389,8 @@ def db_add_link(url: str) -> None:
                     (url,),
                 )
                 conn.commit()
+                # Invalidate search cache when new link added
+                db_invalidate_search_cache()
                 console.print(f"[green]Added:[/green] {url}")
             except psycopg.errors.UniqueViolation:
                 console.print(f"[yellow]Already exists:[/yellow] {url}")
@@ -306,7 +451,10 @@ def db_remove_link(url: str) -> bool:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM links WHERE url = %s", (url,))
             conn.commit()
-            return cur.rowcount > 0
+            if cur.rowcount > 0:
+                db_invalidate_search_cache()
+                return True
+            return False
 
 
 def db_remove_links_pattern(pattern: str) -> list[str]:
@@ -328,6 +476,7 @@ def db_remove_links_pattern(pattern: str) -> list[str]:
             if urls:
                 cur.execute("DELETE FROM links WHERE url LIKE %s", (like_pattern,))
                 conn.commit()
+                db_invalidate_search_cache()
 
             return urls
 
@@ -337,18 +486,20 @@ def db_search(query: str, limit: int = 10, offset: int = 0) -> tuple[list[dict],
 
     BM25 returns negative scores where lower (more negative) = better match.
     Score of 0 means no match.
+    Hidden links are excluded from results.
 
     Returns (results, total_count).
     """
     with get_connection() as conn:
         with conn.cursor() as cur:
-            # Get total count first (exclude 4xx/5xx error pages)
+            # Get total count first (exclude 4xx/5xx error pages and hidden links)
             cur.execute(
                 """
                 SELECT COUNT(*)
                 FROM links
                 WHERE search_text <@> to_bm25query(%s, 'links_search_bm25_idx') < 0
                 AND (http_status IS NULL OR http_status < 400)
+                AND hidden = FALSE
                 """,
                 (query,),
             )
@@ -361,6 +512,7 @@ def db_search(query: str, limit: int = 10, offset: int = 0) -> tuple[list[dict],
                 FROM links
                 WHERE search_text <@> to_bm25query(%s, 'links_search_bm25_idx') < 0
                 AND (http_status IS NULL OR http_status < 400)
+                AND hidden = FALSE
                 ORDER BY score
                 LIMIT %s OFFSET %s
                 """,
@@ -454,6 +606,9 @@ def db_update_crawl_data(
                     (title, description, content, http_status, crawl_error, url),
                 )
             conn.commit()
+            # Invalidate search cache when content changes
+            if content_changed:
+                db_invalidate_search_cache()
             return (cur.rowcount > 0, content_changed)
 
 
@@ -464,6 +619,7 @@ def db_get_links_to_crawl(
 ) -> list[str]:
     """
     Get list of URLs to crawl based on mode.
+    Hidden links are excluded from crawl operations.
 
     Modes:
     - "missing": Links never crawled (crawled_at IS NULL)
@@ -474,19 +630,21 @@ def db_get_links_to_crawl(
     with get_connection() as conn:
         with conn.cursor() as cur:
             if url:
+                # For specific URL, still allow crawling even if hidden
                 cur.execute("SELECT url FROM links WHERE url = %s", (url,))
             elif mode == "missing":
                 cur.execute(
-                    "SELECT url FROM links WHERE crawled_at IS NULL ORDER BY added_at"
+                    "SELECT url FROM links WHERE crawled_at IS NULL AND hidden = FALSE ORDER BY added_at"
                 )
             elif mode == "all":
-                cur.execute("SELECT url FROM links ORDER BY added_at")
+                cur.execute("SELECT url FROM links WHERE hidden = FALSE ORDER BY added_at")
             elif mode == "old":
                 cur.execute(
                     """
                     SELECT url FROM links
-                    WHERE crawled_at IS NULL
-                       OR crawled_at < NOW() - INTERVAL '%s days'
+                    WHERE (crawled_at IS NULL
+                       OR crawled_at < NOW() - INTERVAL '%s days')
+                       AND hidden = FALSE
                     ORDER BY crawled_at NULLS FIRST, added_at
                     """,
                     (days,),
@@ -664,6 +822,7 @@ def db_vector_search(
 
     Uses Tiger Cloud's managed OpenAI API key.
     Only returns results with distance <= max_distance (default 0.8).
+    Hidden links are excluded from results.
 
     Returns (results, total_count).
     """
@@ -684,7 +843,7 @@ def db_vector_search(
             # Generate embedding for query and search using cosine similarity
             # Uses Tiger Cloud's managed API key (no api_key param needed)
             # Filter by max_distance to only return relevant results
-            # Exclude 4xx/5xx error pages
+            # Exclude 4xx/5xx error pages and hidden links
             cur.execute(
                 """
                 WITH query_embed AS (
@@ -700,6 +859,7 @@ def db_vector_search(
                 WHERE embedding IS NOT NULL
                 AND embedding <=> query_embed.vec <= %s
                 AND (http_status IS NULL OR http_status < 400)
+                AND hidden = FALSE
                 ORDER BY distance
                 LIMIT %s OFFSET %s;
                 """,
@@ -717,7 +877,8 @@ def db_vector_search(
                 FROM links, query_embed
                 WHERE embedding IS NOT NULL
                 AND embedding <=> query_embed.vec <= %s
-                AND (http_status IS NULL OR http_status < 400);
+                AND (http_status IS NULL OR http_status < 400)
+                AND hidden = FALSE;
                 """,
                 (query, max_distance),
             )
@@ -744,11 +905,14 @@ def db_hybrid_search(
     vector_weight: float = 0.5,
     rrf_k: int = 60,
     min_score: float = 0.005,
+    use_cache: bool = True,
 ) -> tuple[list[dict], int]:
     """Search links using hybrid search combining BM25 and vector similarity.
 
     Uses Reciprocal Rank Fusion (RRF) to merge rankings from keyword (BM25)
     and semantic (vector) search. RRF formula: 1 / (k + rank).
+    Hidden links are excluded from results.
+    Results are cached for performance (default TTL: 1 hour).
 
     Args:
         query: Search query string
@@ -758,9 +922,18 @@ def db_hybrid_search(
         vector_weight: Weight for vector semantic search (0-1)
         rrf_k: RRF constant (default 60, higher values smooth out ranking differences)
         min_score: Minimum RRF score to include in results (default 0.005)
+        use_cache: Whether to use cached results (default True)
 
     Returns (results, total_count) with combined RRF scores.
     """
+    # Check cache first (only for first page to ensure consistency)
+    if use_cache and offset == 0:
+        cached = db_get_cached_search(query, keyword_weight, vector_weight)
+        if cached:
+            results, total_count = cached
+            # Apply limit to cached results
+            return (results[:limit], total_count)
+
     with get_connection() as conn:
         with conn.cursor() as cur:
             # Check if embedding column exists for vector search
@@ -780,6 +953,7 @@ def db_hybrid_search(
             # Hybrid search using RRF (Reciprocal Rank Fusion)
             # Combines BM25 keyword ranking with vector similarity ranking
             # Filters by minimum RRF score to exclude irrelevant results
+            # Excludes hidden links
             cur.execute(
                 """
                 WITH query_embed AS (
@@ -791,6 +965,7 @@ def db_hybrid_search(
                     FROM links, query_embed
                     WHERE embedding IS NOT NULL
                     AND (http_status IS NULL OR http_status < 400)
+                    AND hidden = FALSE
                     ORDER BY embedding <=> query_embed.vec
                     LIMIT 20
                 ),
@@ -802,6 +977,7 @@ def db_hybrid_search(
                     FROM links
                     WHERE search_text <@> to_bm25query(%s, 'links_search_bm25_idx') < 0
                     AND (http_status IS NULL OR http_status < 400)
+                    AND hidden = FALSE
                     ORDER BY search_text <@> to_bm25query(%s, 'links_search_bm25_idx')
                     LIMIT 20
                 ),
@@ -855,6 +1031,7 @@ def db_hybrid_search(
                     FROM links, query_embed
                     WHERE embedding IS NOT NULL
                     AND (http_status IS NULL OR http_status < 400)
+                    AND hidden = FALSE
                     ORDER BY embedding <=> query_embed.vec
                     LIMIT 20
                 ),
@@ -866,6 +1043,7 @@ def db_hybrid_search(
                     FROM links
                     WHERE search_text <@> to_bm25query(%s, 'links_search_bm25_idx') < 0
                     AND (http_status IS NULL OR http_status < 400)
+                    AND hidden = FALSE
                     ORDER BY search_text <@> to_bm25query(%s, 'links_search_bm25_idx')
                     LIMIT 20
                 ),
@@ -909,4 +1087,223 @@ def db_hybrid_search(
         }
         for row in rows
     ]
+
+    # Cache results for future queries (only cache first page)
+    if use_cache and offset == 0:
+        db_cache_search(query, keyword_weight, vector_weight, results, total_count)
+
     return (results, total_count)
+
+
+# =============================================================================
+# Link Management Functions (for web interface)
+# =============================================================================
+
+
+def db_toggle_hidden(url: str) -> bool | None:
+    """Toggle the hidden status of a link.
+
+    Args:
+        url: The URL of the link to toggle
+
+    Returns:
+        The new hidden status (True/False), or None if link not found.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE links
+                SET hidden = NOT hidden,
+                    updated_at = NOW()
+                WHERE url = %s
+                RETURNING hidden
+                """,
+                (url,),
+            )
+            row = cur.fetchone()
+            if row:
+                conn.commit()
+                # Invalidate search cache when hidden status changes
+                db_invalidate_search_cache()
+                return row[0]
+            return None
+
+
+def db_toggle_hidden_by_id(link_id: str) -> bool | None:
+    """Toggle the hidden status of a link by ID.
+
+    Args:
+        link_id: The UUID of the link to toggle
+
+    Returns:
+        The new hidden status (True/False), or None if link not found.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE links
+                SET hidden = NOT hidden,
+                    updated_at = NOW()
+                WHERE id = %s
+                RETURNING hidden
+                """,
+                (link_id,),
+            )
+            row = cur.fetchone()
+            if row:
+                conn.commit()
+                # Invalidate search cache when hidden status changes
+                db_invalidate_search_cache()
+                return row[0]
+            return None
+
+
+def db_get_link_by_id(link_id: str) -> dict | None:
+    """Get full link details by ID.
+
+    Args:
+        link_id: The UUID of the link
+
+    Returns:
+        Dictionary with all link fields, or None if not found.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # Check if embedding column exists
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns
+                    WHERE table_name = 'links' AND column_name = 'embedding'
+                );
+            """)
+            has_embedding = cur.fetchone()[0]
+
+            if has_embedding:
+                cur.execute(
+                    """
+                    SELECT id, url, title, description, content, notes, tags,
+                           hidden, added_at, updated_at, crawled_at, http_status,
+                           crawl_error, embedding IS NOT NULL as has_embedding
+                    FROM links
+                    WHERE id = %s
+                    """,
+                    (link_id,),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT id, url, title, description, content, notes, tags,
+                           hidden, added_at, updated_at, crawled_at, http_status,
+                           crawl_error, FALSE as has_embedding
+                    FROM links
+                    WHERE id = %s
+                    """,
+                    (link_id,),
+                )
+
+            row = cur.fetchone()
+            if not row:
+                return None
+
+            return {
+                "id": str(row[0]),
+                "url": row[1],
+                "title": row[2],
+                "description": row[3],
+                "content": row[4],
+                "notes": row[5],
+                "tags": row[6],
+                "hidden": row[7],
+                "added_at": row[8].isoformat() if row[8] else None,
+                "updated_at": row[9].isoformat() if row[9] else None,
+                "crawled_at": row[10].isoformat() if row[10] else None,
+                "http_status": row[11],
+                "crawl_error": row[12],
+                "has_embedding": row[13],
+            }
+
+
+def db_get_link_by_url(url: str) -> dict | None:
+    """Get full link details by URL.
+
+    Args:
+        url: The URL of the link
+
+    Returns:
+        Dictionary with all link fields, or None if not found.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # Check if embedding column exists
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns
+                    WHERE table_name = 'links' AND column_name = 'embedding'
+                );
+            """)
+            has_embedding = cur.fetchone()[0]
+
+            if has_embedding:
+                cur.execute(
+                    """
+                    SELECT id, url, title, description, content, notes, tags,
+                           hidden, added_at, updated_at, crawled_at, http_status,
+                           crawl_error, embedding IS NOT NULL as has_embedding
+                    FROM links
+                    WHERE url = %s
+                    """,
+                    (url,),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT id, url, title, description, content, notes, tags,
+                           hidden, added_at, updated_at, crawled_at, http_status,
+                           crawl_error, FALSE as has_embedding
+                    FROM links
+                    WHERE url = %s
+                    """,
+                    (url,),
+                )
+
+            row = cur.fetchone()
+            if not row:
+                return None
+
+            return {
+                "id": str(row[0]),
+                "url": row[1],
+                "title": row[2],
+                "description": row[3],
+                "content": row[4],
+                "notes": row[5],
+                "tags": row[6],
+                "hidden": row[7],
+                "added_at": row[8].isoformat() if row[8] else None,
+                "updated_at": row[9].isoformat() if row[9] else None,
+                "crawled_at": row[10].isoformat() if row[10] else None,
+                "http_status": row[11],
+                "crawl_error": row[12],
+                "has_embedding": row[13],
+            }
+
+
+def db_delete_link_by_id(link_id: str) -> bool:
+    """Delete a link by ID.
+
+    Args:
+        link_id: The UUID of the link to delete
+
+    Returns:
+        True if deleted, False if not found.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM links WHERE id = %s", (link_id,))
+            conn.commit()
+            if cur.rowcount > 0:
+                db_invalidate_search_cache()
+                return True
+            return False

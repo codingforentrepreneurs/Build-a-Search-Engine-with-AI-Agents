@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+
+{% block title %}{% if query %}Search: {{ query }}{% else %}Search{% endif %} - tars{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <!-- Search Form (compact version) -->
+    <form id="search-form"
+          class="mb-8"
+          hx-get="/search"
+          hx-target="#search-results"
+          hx-indicator="#search-indicator"
+          hx-push-url="true">
+
+        <div class="flex flex-col sm:flex-row gap-4">
+            <!-- Search Input -->
+            <div class="relative flex-1">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg class="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                </div>
+                <input type="text"
+                       name="q"
+                       id="search-input"
+                       value="{{ query }}"
+                       placeholder="Search your links..."
+                       autocomplete="off"
+                       class="w-full pl-10 pr-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500">
+
+                <!-- Loading indicator -->
+                <div id="search-indicator" class="htmx-indicator absolute inset-y-0 right-3 flex items-center">
+                    <svg class="animate-spin h-5 w-5 text-primary-500" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Search Type Dropdown -->
+            <div class="flex gap-2">
+                <select name="type"
+                        id="search-type"
+                        class="px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100">
+                    <option value="hybrid" {% if search_type == 'hybrid' %}selected{% endif %}>Hybrid</option>
+                    <option value="text" {% if search_type == 'text' %}selected{% endif %}>Text</option>
+                    <option value="vector" {% if search_type == 'vector' %}selected{% endif %}>Vector</option>
+                </select>
+
+                <button type="submit"
+                        class="px-6 py-3 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-lg shadow-sm hover:shadow-md transition-all focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900">
+                    Search
+                </button>
+            </div>
+        </div>
+
+        <!-- Weight controls (collapsible, for hybrid search) -->
+        <div id="weight-controls" class="{% if search_type != 'hybrid' %}hidden{% endif %} mt-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
+            <div class="grid grid-cols-2 gap-4">
+                <div class="flex items-center gap-3">
+                    <label class="text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">Keyword:</label>
+                    <input type="range" name="keyword_weight" id="keyword-weight"
+                           min="0" max="1" step="0.1" value="{{ keyword_weight|default(0.5) }}"
+                           class="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer">
+                    <span id="keyword-weight-display" class="text-sm font-medium text-blue-600 dark:text-blue-400 w-8">{{ keyword_weight|default(0.5) }}</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <label class="text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">Vector:</label>
+                    <input type="range" name="vector_weight" id="vector-weight"
+                           min="0" max="1" step="0.1" value="{{ vector_weight|default(0.5) }}"
+                           class="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer">
+                    <span id="vector-weight-display" class="text-sm font-medium text-violet-600 dark:text-violet-400 w-8">{{ vector_weight|default(0.5) }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Hidden inputs for pagination -->
+        <input type="hidden" name="page" id="page-input" value="{{ pagination.page|default(1) }}">
+    </form>
+
+    <!-- Results Header -->
+    {% if query %}
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 pb-4 border-b border-slate-200 dark:border-slate-700">
+        <div>
+            <h1 class="text-xl font-semibold text-slate-800 dark:text-slate-200">
+                Results for "{{ query }}"
+            </h1>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                {% if pagination.total_count == 0 %}
+                    No results found
+                {% elif pagination.total_count == 1 %}
+                    1 result
+                {% else %}
+                    {{ pagination.total_count }} results
+                {% endif %}
+                {% if search_type and search_type != 'hybrid' %}
+                    <span class="text-slate-400 dark:text-slate-500">via {{ search_type }} search</span>
+                {% endif %}
+            </p>
+        </div>
+        <a href="/" class="mt-2 sm:mt-0 text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 transition-colors">
+            New search
+        </a>
+    </div>
+    {% endif %}
+
+    <!-- Search Results -->
+    <div id="search-results">
+        {% if results %}
+            <div class="space-y-4">
+                {% for result in results %}
+                    {% include "partials/search_result.html" %}
+                {% endfor %}
+            </div>
+
+            <!-- Pagination -->
+            {% if pagination.total_pages > 1 %}
+            <nav class="mt-8 flex items-center justify-center">
+                <div class="flex items-center gap-2">
+                    <!-- Previous button -->
+                    {% if pagination.page > 1 %}
+                    <a href="?q={{ query }}&type={{ search_type }}&page={{ pagination.page - 1 }}{% if keyword_weight %}&keyword_weight={{ keyword_weight }}{% endif %}{% if vector_weight %}&vector_weight={{ vector_weight }}{% endif %}"
+                       hx-get="/search?q={{ query }}&type={{ search_type }}&page={{ pagination.page - 1 }}{% if keyword_weight %}&keyword_weight={{ keyword_weight }}{% endif %}{% if vector_weight %}&vector_weight={{ vector_weight }}{% endif %}"
+                       hx-target="#search-results"
+                       hx-push-url="true"
+                       class="px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+                        Previous
+                    </a>
+                    {% else %}
+                    <span class="px-3 py-2 text-sm font-medium text-slate-400 dark:text-slate-600 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg cursor-not-allowed">
+                        Previous
+                    </span>
+                    {% endif %}
+
+                    <!-- Page numbers -->
+                    <div class="hidden sm:flex items-center gap-1">
+                        {% for p in range(1, pagination.total_pages + 1) %}
+                            {% if p == pagination.page %}
+                            <span class="px-3 py-2 text-sm font-medium text-white bg-primary-500 rounded-lg">
+                                {{ p }}
+                            </span>
+                            {% elif p == 1 or p == pagination.total_pages or (p >= pagination.page - 2 and p <= pagination.page + 2) %}
+                            <a href="?q={{ query }}&type={{ search_type }}&page={{ p }}{% if keyword_weight %}&keyword_weight={{ keyword_weight }}{% endif %}{% if vector_weight %}&vector_weight={{ vector_weight }}{% endif %}"
+                               hx-get="/search?q={{ query }}&type={{ search_type }}&page={{ p }}{% if keyword_weight %}&keyword_weight={{ keyword_weight }}{% endif %}{% if vector_weight %}&vector_weight={{ vector_weight }}{% endif %}"
+                               hx-target="#search-results"
+                               hx-push-url="true"
+                               class="px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+                                {{ p }}
+                            </a>
+                            {% elif p == pagination.page - 3 or p == pagination.page + 3 %}
+                            <span class="px-2 text-slate-400 dark:text-slate-600">...</span>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+
+                    <!-- Mobile page indicator -->
+                    <span class="sm:hidden px-3 py-2 text-sm text-slate-600 dark:text-slate-400">
+                        Page {{ pagination.page }} of {{ pagination.total_pages }}
+                    </span>
+
+                    <!-- Next button -->
+                    {% if pagination.page < pagination.total_pages %}
+                    <a href="?q={{ query }}&type={{ search_type }}&page={{ pagination.page + 1 }}{% if keyword_weight %}&keyword_weight={{ keyword_weight }}{% endif %}{% if vector_weight %}&vector_weight={{ vector_weight }}{% endif %}"
+                       hx-get="/search?q={{ query }}&type={{ search_type }}&page={{ pagination.page + 1 }}{% if keyword_weight %}&keyword_weight={{ keyword_weight }}{% endif %}{% if vector_weight %}&vector_weight={{ vector_weight }}{% endif %}"
+                       hx-target="#search-results"
+                       hx-push-url="true"
+                       class="px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+                        Next
+                    </a>
+                    {% else %}
+                    <span class="px-3 py-2 text-sm font-medium text-slate-400 dark:text-slate-600 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg cursor-not-allowed">
+                        Next
+                    </span>
+                    {% endif %}
+                </div>
+            </nav>
+            {% endif %}
+
+        {% elif query %}
+            <!-- No results state -->
+            <div class="text-center py-12">
+                <svg class="mx-auto h-12 w-12 text-slate-400 dark:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <h3 class="mt-4 text-lg font-medium text-slate-900 dark:text-slate-100">No results found</h3>
+                <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                    No links matched your search for "{{ query }}".
+                </p>
+                <div class="mt-6">
+                    <a href="/"
+                       class="inline-flex items-center px-4 py-2 text-sm font-medium text-primary-600 bg-primary-50 dark:bg-primary-900/20 dark:text-primary-400 rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors">
+                        Try a different search
+                    </a>
+                </div>
+            </div>
+        {% else %}
+            <!-- Empty state (no query) -->
+            <div class="text-center py-12">
+                <svg class="mx-auto h-12 w-12 text-slate-400 dark:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                </svg>
+                <h3 class="mt-4 text-lg font-medium text-slate-900 dark:text-slate-100">Start searching</h3>
+                <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                    Enter a query above to search your links.
+                </p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Weight slider updates
+    const keywordWeight = document.getElementById('keyword-weight');
+    const vectorWeight = document.getElementById('vector-weight');
+    const keywordDisplay = document.getElementById('keyword-weight-display');
+    const vectorDisplay = document.getElementById('vector-weight-display');
+    const searchType = document.getElementById('search-type');
+    const weightControls = document.getElementById('weight-controls');
+
+    if (keywordWeight && keywordDisplay) {
+        keywordWeight.addEventListener('input', function() {
+            keywordDisplay.textContent = this.value;
+        });
+    }
+
+    if (vectorWeight && vectorDisplay) {
+        vectorWeight.addEventListener('input', function() {
+            vectorDisplay.textContent = this.value;
+        });
+    }
+
+    // Toggle weight controls based on search type
+    if (searchType && weightControls) {
+        searchType.addEventListener('change', function() {
+            if (this.value === 'hybrid') {
+                weightControls.classList.remove('hidden');
+            } else {
+                weightControls.classList.add('hidden');
+            }
+        });
+    }
+
+    // Reset page to 1 when search params change
+    document.getElementById('search-form').addEventListener('htmx:configRequest', function(event) {
+        // If not a pagination click, reset page to 1
+        if (!event.detail.path.includes('&page=')) {
+            const pageInput = document.getElementById('page-input');
+            if (pageInput) {
+                pageInput.value = 1;
+            }
+        }
+    });
+</script>
+{% endblock %}

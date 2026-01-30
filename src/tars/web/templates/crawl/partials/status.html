@@ -1,0 +1,29 @@
+<!-- Crawl Status Partial -->
+<div id="crawl-status" {% if progress.state == 'RUNNING' %}hx-get="/crawl/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+    {% if progress.state == 'IDLE' %}
+    <div class="text-center py-8 text-slate-500 dark:text-slate-400">
+        <p>No crawl in progress</p>
+    </div>
+    {% elif progress.state == 'RUNNING' %}
+    <div class="space-y-4">
+        <div class="flex items-center justify-between">
+            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Crawling...</span>
+            <span class="text-sm text-slate-500 dark:text-slate-400">{{ progress.completed }} / {{ progress.total }}</span>
+        </div>
+        <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2">
+            <div class="bg-primary-500 h-2 rounded-full transition-all" style="width: {{ (progress.completed / progress.total * 100) if progress.total > 0 else 0 }}%"></div>
+        </div>
+        {% if progress.current_url %}
+        <p class="text-sm text-slate-500 dark:text-slate-400 truncate">{{ progress.current_url }}</p>
+        {% endif %}
+    </div>
+    {% elif progress.state == 'COMPLETED' %}
+    <div class="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+        <p class="text-green-700 dark:text-green-300">Crawl completed: {{ progress.success }} succeeded, {{ progress.errors }} failed</p>
+    </div>
+    {% elif progress.state == 'ERROR' %}
+    <div class="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">
+        <p class="text-red-700 dark:text-red-300">Crawl failed</p>
+    </div>
+    {% endif %}
+</div>

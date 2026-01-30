@@ -432,6 +432,52 @@ def hybrid_search(
         console.print(f"\n[dim]Page {page}/{total_pages} ({total_count} total results)[/dim]")
 
 
+def start_web_server(
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    reload: bool = False,
+    open_browser: bool = False,
+) -> None:
+    """Start the tars web interface server."""
+    try:
+        import uvicorn
+    except ImportError:
+        console.print("[red]Error:[/red] uvicorn not installed.")
+        console.print("Install with: pip install 'uvicorn[standard]'")
+        return
+
+    try:
+        from tars.web import app
+        if app is None:
+            console.print("[red]Error:[/red] FastAPI dependencies not installed.")
+            console.print("Install with: pip install fastapi jinja2 python-multipart")
+            return
+    except ImportError as e:
+        console.print(f"[red]Error:[/red] Failed to import web module: {e}")
+        return
+
+    url = f"http://{host}:{port}"
+    console.print(f"[bold]Starting tars web interface at {url}[/bold]")
+
+    if open_browser:
+        import threading
+        import time
+        import webbrowser
+
+        def open_browser_delayed():
+            time.sleep(1.5)  # Wait for server to start
+            webbrowser.open(url)
+
+        threading.Thread(target=open_browser_delayed, daemon=True).start()
+
+    uvicorn.run(
+        "tars.web:app",
+        host=host,
+        port=port,
+        reload=reload,
+    )
+
+
 def embed_links(limit: int | None = None) -> None:
     """Generate embeddings for links that don't have them."""
     from tars.db import db_generate_embeddings, db_vectorizer_status, is_db_configured
@@ -555,6 +601,13 @@ def main():
     search_parser.add_argument("--vector-weight", type=float, default=0.5, help="Weight for vector/semantic search (0-1, default: 0.5)")
     search_parser.add_argument("--min-score", type=float, default=0.005, help="Minimum RRF score threshold (default: 0.005)")
 
+    # Web server command
+    web_parser = subparsers.add_parser("web", help="Start the tars web interface")
+    web_parser.add_argument("--host", default="127.0.0.1", help="Host to bind to (default: 127.0.0.1)")
+    web_parser.add_argument("--port", type=int, default=8000, help="Port to bind to (default: 8000)")
+    web_parser.add_argument("--reload", action="store_true", help="Enable auto-reload for development")
+    web_parser.add_argument("--open", dest="open_browser", action="store_true", help="Open browser automatically")
+
     args = parser.parse_args()
 
     try:
@@ -594,6 +647,13 @@ def main():
                 args.keyword_weight,
                 args.vector_weight,
                 args.min_score,
+            )
+        elif args.command == "web":
+            start_web_server(
+                host=args.host,
+                port=args.port,
+                reload=args.reload,
+                open_browser=args.open_browser,
             )
         else:
             parser.print_help()

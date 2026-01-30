@@ -1,0 +1,20 @@
+<!-- DB Init Result Partial -->
+{% if success %}
+<div class="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+    <div class="flex items-center gap-3">
+        <svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+        </svg>
+        <span class="text-green-700 dark:text-green-300">Database initialized successfully!</span>
+    </div>
+</div>
+{% else %}
+<div class="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
+    <div class="flex items-center gap-3">
+        <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+        <span class="text-red-700 dark:text-red-300">{{ error or 'Failed to initialize database' }}</span>
+    </div>
+</div>
+{% endif %}

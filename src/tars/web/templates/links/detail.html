@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+
+{% block title %}{{ link.title or 'Link Details' }} - tars{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    {# Back button and actions header #}
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <a href="/links"
+           class="inline-flex items-center gap-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+            </svg>
+            Back to links
+        </a>
+
+        {# Open original button #}
+        <a href="{{ link.url }}"
+           target="_blank"
+           rel="noopener noreferrer"
+           class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg shadow-sm transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+            </svg>
+            Open Original
+        </a>
+    </div>
+
+    {# Link title #}
+    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+        <h1 class="text-2xl font-bold text-slate-900 dark:text-slate-100 {% if link.hidden %}line-through opacity-60{% endif %}">
+            {% if link.title %}
+                {{ link.title }}
+            {% else %}
+                <span class="text-slate-500 dark:text-slate-400 italic">Untitled</span>
+            {% endif %}
+        </h1>
+        {% if link.hidden %}
+            <span class="inline-flex items-center gap-1 mt-2 px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                Hidden
+            </span>
+        {% endif %}
+    </div>
+
+    {# Metadata section #}
+    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4">Details</h2>
+
+        <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {# URL #}
+            <div class="sm:col-span-2">
+                <dt class="text-sm font-medium text-slate-500 dark:text-slate-400">URL</dt>
+                <dd class="mt-1">
+                    <a href="{{ link.url }}"
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       class="text-primary-600 dark:text-primary-400 hover:underline break-all">
+                        {{ link.url }}
+                    </a>
+                </dd>
+            </div>
+
+            {# Description #}
+            {% if link.description %}
+                <div class="sm:col-span-2">
+                    <dt class="text-sm font-medium text-slate-500 dark:text-slate-400">Description</dt>
+                    <dd class="mt-1 text-slate-900 dark:text-slate-100">
+                        {{ link.description }}
+                    </dd>
+                </div>
+            {% endif %}
+
+            {# Added date #}
+            <div>
+                <dt class="text-sm font-medium text-slate-500 dark:text-slate-400">Added</dt>
+                <dd class="mt-1 text-slate-900 dark:text-slate-100">
+                    {% if link.added_at %}
+                        {{ link.added_at[:19].replace('T', ' ') }}
+                    {% else %}
+                        <span class="text-slate-400 dark:text-slate-500">-</span>
+                    {% endif %}
+                </dd>
+            </div>
+
+            {# Updated date #}
+            <div>
+                <dt class="text-sm font-medium text-slate-500 dark:text-slate-400">Updated</dt>
+                <dd class="mt-1 text-slate-900 dark:text-slate-100">
+                    {% if link.updated_at %}
+                        {{ link.updated_at[:19].replace('T', ' ') }}
+                    {% else %}
+                        <span class="text-slate-400 dark:text-slate-500">-</span>
+                    {% endif %}
+                </dd>
+            </div>
+
+            {# Crawled date #}
+            <div>
+                <dt class="text-sm font-medium text-slate-500 dark:text-slate-400">Crawled</dt>
+                <dd class="mt-1 text-slate-900 dark:text-slate-100">
+                    {% if link.crawled_at %}
+                        {{ link.crawled_at[:19].replace('T', ' ') }}
+                    {% else %}
+                        <span class="text-slate-400 dark:text-slate-500">Never</span>
+                    {% endif %}
+                </dd>
+            </div>
+
+            {# HTTP Status #}
+            <div>
+                <dt class="text-sm font-medium text-slate-500 dark:text-slate-400">HTTP Status</dt>
+                <dd class="mt-1">
+                    {% if link.http_status %}
+                        {% if link.http_status >= 200 and link.http_status < 300 %}
+                            <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                                {{ link.http_status }}
+                            </span>
+                        {% elif link.http_status >= 300 and link.http_status < 400 %}
+                            <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                {{ link.http_status }}
+                            </span>
+                        {% elif link.http_status >= 400 %}
+                            <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                                {{ link.http_status }}
+                            </span>
+                        {% else %}
+                            <span class="text-slate-900 dark:text-slate-100">{{ link.http_status }}</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="text-slate-400 dark:text-slate-500">-</span>
+                    {% endif %}
+                </dd>
+            </div>
+
+            {# Crawl error #}
+            {% if link.crawl_error %}
+                <div class="sm:col-span-2">
+                    <dt class="text-sm font-medium text-red-500 dark:text-red-400">Crawl Error</dt>
+                    <dd class="mt-1 text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 rounded p-2 text-sm">
+                        {{ link.crawl_error }}
+                    </dd>
+                </div>
+            {% endif %}
+
+            {# Notes #}
+            {% if link.notes %}
+                <div class="sm:col-span-2">
+                    <dt class="text-sm font-medium text-slate-500 dark:text-slate-400">Notes</dt>
+                    <dd class="mt-1 text-slate-900 dark:text-slate-100 whitespace-pre-wrap">
+                        {{ link.notes }}
+                    </dd>
+                </div>
+            {% endif %}
+
+            {# Tags #}
+            {% if link.tags %}
+                <div class="sm:col-span-2">
+                    <dt class="text-sm font-medium text-slate-500 dark:text-slate-400">Tags</dt>
+                    <dd class="mt-1 flex flex-wrap gap-2">
+                        {% for tag in link.tags %}
+                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300">
+                                {{ tag }}
+                            </span>
+                        {% endfor %}
+                    </dd>
+                </div>
+            {% endif %}
+        </dl>
+    </div>
+
+    {# Actions section #}
+    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4">Actions</h2>
+
+        <div id="link-actions" class="flex flex-wrap gap-3">
+            {# Crawl Now button #}
+            <button hx-post="/links/{{ link.id }}/crawl"
+                    hx-target="#link-actions"
+                    hx-swap="innerHTML"
+                    hx-indicator="#crawl-indicator"
+                    class="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 font-medium rounded-lg transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+                Crawl Now
+                <span id="crawl-indicator" class="htmx-indicator">
+                    <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </span>
+            </button>
+
+            {# Hide/Unhide toggle #}
+            <button hx-post="/links/{{ link.id }}/toggle-hidden"
+                    hx-target="body"
+                    hx-swap="outerHTML"
+                    hx-push-url="false"
+                    class="inline-flex items-center gap-2 px-4 py-2 bg-amber-100 dark:bg-amber-900/30 hover:bg-amber-200 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-400 font-medium rounded-lg transition-colors">
+                {% if link.hidden %}
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                    </svg>
+                    Unhide
+                {% else %}
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path>
+                    </svg>
+                    Hide
+                {% endif %}
+            </button>
+
+            {# Delete button #}
+            <button hx-delete="/links/{{ link.id }}"
+                    hx-confirm="Are you sure you want to delete this link? This cannot be undone."
+                    hx-target="body"
+                    class="inline-flex items-center gap-2 px-4 py-2 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 font-medium rounded-lg transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                </svg>
+                Delete
+            </button>
+        </div>
+    </div>
+
+    {# Rendered content section #}
+    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4">Content</h2>
+
+        {% if link.content %}
+            <div class="max-h-[600px] overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-slate-50 dark:bg-slate-900">
+                <div class="prose prose-slate dark:prose-invert max-w-none text-sm">
+                    {# Render content with basic formatting preserved #}
+                    <pre class="whitespace-pre-wrap font-sans text-slate-700 dark:text-slate-300 leading-relaxed">{{ link.content }}</pre>
+                </div>
+            </div>
+            <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                {{ link.content|length }} characters
+            </p>
+        {% else %}
+            <div class="text-center py-8">
+                <div class="mx-auto w-12 h-12 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center mb-3">
+                    <svg class="w-6 h-6 text-slate-400 dark:text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                </div>
+                <p class="text-slate-600 dark:text-slate-400 mb-4">No content available. This link has not been crawled yet.</p>
+                <button hx-post="/links/{{ link.id }}/crawl"
+                        hx-target="#link-actions"
+                        hx-swap="innerHTML"
+                        class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg shadow-sm transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                    Crawl Now
+                </button>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Handle successful delete - redirect to links list
+    document.body.addEventListener('htmx:afterRequest', function(evt) {
+        if (evt.detail.requestConfig.verb === 'delete' && evt.detail.successful) {
+            window.location.href = '/links';
+        }
+    });
+</script>
+{% endblock %}

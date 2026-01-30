@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+
+{% block title %}Crawl Management - tars{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+    <!-- Page Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900 dark:text-white">Crawl Management</h1>
+            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Crawl links to extract content for better search results
+            </p>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Total Links -->
+        <div class="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-5">
+            <div class="flex items-center">
+                <div class="flex-shrink-0">
+                    <div class="w-10 h-10 bg-slate-100 dark:bg-slate-700 rounded-lg flex items-center justify-center">
+                        <svg class="w-5 h-5 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
+                        </svg>
+                    </div>
+                </div>
+                <div class="ml-4">
+                    <p class="text-sm font-medium text-slate-500 dark:text-slate-400">Total Links</p>
+                    <p class="text-2xl font-semibold text-slate-900 dark:text-white">{{ stats.total | default(0) }}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Crawled -->
+        <div class="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-5">
+            <div class="flex items-center">
+                <div class="flex-shrink-0">
+                    <div class="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
+                        <svg class="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                        </svg>
+                    </div>
+                </div>
+                <div class="ml-4">
+                    <p class="text-sm font-medium text-slate-500 dark:text-slate-400">Crawled</p>
+                    <p class="text-2xl font-semibold text-green-600 dark:text-green-400">{{ stats.crawled | default(0) }}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pending -->
+        <div class="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-5">
+            <div class="flex items-center">
+                <div class="flex-shrink-0">
+                    <div class="w-10 h-10 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg flex items-center justify-center">
+                        <svg class="w-5 h-5 text-yellow-600 dark:text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                </div>
+                <div class="ml-4">
+                    <p class="text-sm font-medium text-slate-500 dark:text-slate-400">Pending</p>
+                    <p class="text-2xl font-semibold text-yellow-600 dark:text-yellow-500">{{ stats.pending | default(0) }}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Errors -->
+        <div class="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-5">
+            <div class="flex items-center">
+                <div class="flex-shrink-0">
+                    <div class="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
+                        <svg class="w-5 h-5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                </div>
+                <div class="ml-4">
+                    <p class="text-sm font-medium text-slate-500 dark:text-slate-400">Errors</p>
+                    <p class="text-2xl font-semibold text-red-600 dark:text-red-400">{{ stats.errors | default(0) }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Crawl Controls -->
+    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Start New Crawl</h2>
+
+        <form id="crawl-form" hx-post="/crawl/start" hx-target="#crawl-status" hx-swap="innerHTML">
+            <!-- Crawl Mode Selector -->
+            <div class="space-y-4 mb-6">
+                <p class="text-sm font-medium text-slate-700 dark:text-slate-300">Crawl Mode</p>
+
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <!-- Missing Only -->
+                    <label class="relative flex cursor-pointer rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 p-4 shadow-sm focus:outline-none hover:border-primary-500 dark:hover:border-primary-400 transition-colors">
+                        <input type="radio" name="mode" value="missing" class="sr-only" checked>
+                        <span class="flex flex-1">
+                            <span class="flex flex-col">
+                                <span class="block text-sm font-medium text-slate-900 dark:text-white">Missing Only</span>
+                                <span class="mt-1 flex items-center text-sm text-slate-500 dark:text-slate-400">Crawl links never crawled</span>
+                            </span>
+                        </span>
+                        <svg class="h-5 w-5 text-primary-600 dark:text-primary-400 opacity-0 peer-checked:opacity-100" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" />
+                        </svg>
+                        <span class="pointer-events-none absolute -inset-px rounded-lg border-2 border-transparent peer-checked:border-primary-600 dark:peer-checked:border-primary-400" aria-hidden="true"></span>
+                    </label>
+
+                    <!-- All Links -->
+                    <label class="relative flex cursor-pointer rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 p-4 shadow-sm focus:outline-none hover:border-primary-500 dark:hover:border-primary-400 transition-colors">
+                        <input type="radio" name="mode" value="all" class="sr-only">
+                        <span class="flex flex-1">
+                            <span class="flex flex-col">
+                                <span class="block text-sm font-medium text-slate-900 dark:text-white">All Links</span>
+                                <span class="mt-1 flex items-center text-sm text-slate-500 dark:text-slate-400">Re-crawl everything</span>
+                            </span>
+                        </span>
+                        <svg class="h-5 w-5 text-primary-600 dark:text-primary-400 opacity-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" />
+                        </svg>
+                        <span class="pointer-events-none absolute -inset-px rounded-lg border-2 border-transparent" aria-hidden="true"></span>
+                    </label>
+
+                    <!-- Older Than N Days -->
+                    <label class="relative flex cursor-pointer rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 p-4 shadow-sm focus:outline-none hover:border-primary-500 dark:hover:border-primary-400 transition-colors">
+                        <input type="radio" name="mode" value="old" class="sr-only">
+                        <span class="flex flex-1">
+                            <span class="flex flex-col">
+                                <span class="block text-sm font-medium text-slate-900 dark:text-white">Older Than</span>
+                                <span class="mt-1 flex items-center text-sm text-slate-500 dark:text-slate-400">
+                                    <input type="number" name="days" value="7" min="1" max="365"
+                                           class="w-16 mr-1 px-2 py-0.5 text-sm border border-slate-300 dark:border-slate-500 rounded bg-white dark:bg-slate-600 text-slate-900 dark:text-white focus:ring-primary-500 focus:border-primary-500"
+                                           onclick="event.stopPropagation(); this.closest('label').querySelector('input[type=radio]').checked = true;">
+                                    days
+                                </span>
+                            </span>
+                        </span>
+                        <svg class="h-5 w-5 text-primary-600 dark:text-primary-400 opacity-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" />
+                        </svg>
+                        <span class="pointer-events-none absolute -inset-px rounded-lg border-2 border-transparent" aria-hidden="true"></span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Start Button -->
+            <button type="submit"
+                    class="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:focus:ring-offset-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    id="start-crawl-btn">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                Start Crawl
+                <span class="htmx-indicator ml-2">
+                    <svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </span>
+            </button>
+        </form>
+    </div>
+
+    <!-- Crawl Status / Progress Section -->
+    <div id="crawl-status">
+        {% if crawl_active %}
+        <div class="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-6"
+             hx-get="/crawl/status" hx-trigger="every 2s" hx-swap="innerHTML" hx-target="#crawl-status">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Crawl in Progress</h2>
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                    <span class="w-2 h-2 mr-1.5 bg-blue-400 rounded-full animate-pulse"></span>
+                    Running
+                </span>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="mb-4">
+                <div class="flex justify-between text-sm text-slate-600 dark:text-slate-400 mb-1">
+                    <span>Progress</span>
+                    <span>{{ crawl_progress.completed | default(0) }} of {{ crawl_progress.total | default(0) }} completed</span>
+                </div>
+                <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3">
+                    <div class="bg-primary-600 h-3 rounded-full transition-all duration-300"
+                         style="width: {{ crawl_progress.percentage | default(0) }}%"></div>
+                </div>
+            </div>
+
+            <!-- Current URL -->
+            <div class="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
+                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">Currently Crawling</p>
+                <p class="text-sm text-slate-900 dark:text-white font-mono truncate">{{ crawl_progress.current_url | default('Initializing...') }}</p>
+            </div>
+
+            <!-- Cancel Button -->
+            <div class="mt-4">
+                <button type="button"
+                        hx-post="/crawl/cancel"
+                        hx-target="#crawl-status"
+                        class="inline-flex items-center px-4 py-2 border border-slate-300 dark:border-slate-600 text-sm font-medium rounded-md text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:focus:ring-offset-slate-800 transition-colors">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                    Cancel Crawl
+                </button>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Recent Crawl History -->
+    {% if crawl_history %}
+    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Recent Crawl Activity</h2>
+
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+                <thead>
+                    <tr>
+                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">URL</th>
+                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Status</th>
+                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Crawled At</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
+                    {% for entry in crawl_history %}
+                    <tr class="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                        <td class="px-4 py-3 text-sm">
+                            <a href="{{ entry.url }}" target="_blank" rel="noopener noreferrer"
+                               class="text-primary-600 dark:text-primary-400 hover:underline font-mono text-xs truncate block max-w-md">
+                                {{ entry.url }}
+                            </a>
+                        </td>
+                        <td class="px-4 py-3 whitespace-nowrap">
+                            {% if entry.success %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                                Success
+                            </span>
+                            {% else %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
+                                Failed
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">
+                            {{ entry.crawled_at | default('-') }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Handle radio button visual states
+    document.querySelectorAll('input[name="mode"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            // Reset all cards
+            document.querySelectorAll('input[name="mode"]').forEach(r => {
+                const label = r.closest('label');
+                const checkIcon = label.querySelector('svg');
+                const border = label.querySelector('span.pointer-events-none');
+
+                if (r.checked) {
+                    checkIcon.classList.remove('opacity-0');
+                    checkIcon.classList.add('opacity-100');
+                    border.classList.add('border-primary-600', 'dark:border-primary-400');
+                } else {
+                    checkIcon.classList.add('opacity-0');
+                    checkIcon.classList.remove('opacity-100');
+                    border.classList.remove('border-primary-600', 'dark:border-primary-400');
+                }
+            });
+        });
+    });
+
+    // Initialize the first radio button state
+    document.querySelector('input[name="mode"]:checked').dispatchEvent(new Event('change'));
+</script>
+{% endblock %}

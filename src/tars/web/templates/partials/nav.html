@@ -1,0 +1,192 @@
+<!-- Navigation Bar -->
+<nav class="bg-white dark:bg-slate-800 shadow-sm border-b border-slate-200 dark:border-slate-700 sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between h-14">
+            <!-- Logo and primary nav -->
+            <div class="flex items-center">
+                <!-- Logo -->
+                <a href="/" class="flex-shrink-0 flex items-center">
+                    <span class="text-xl font-bold text-slate-800 dark:text-white">tars</span>
+                </a>
+
+                <!-- Desktop Navigation -->
+                <div class="hidden md:ml-8 md:flex md:space-x-1">
+                    <a href="/search"
+                       class="px-3 py-2 rounded-md text-sm font-medium transition-colors
+                              {% if active_page == 'search' %}
+                              bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300
+                              {% else %}
+                              text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white
+                              {% endif %}">
+                        Search
+                    </a>
+                    <a href="/links"
+                       class="px-3 py-2 rounded-md text-sm font-medium transition-colors
+                              {% if active_page == 'links' %}
+                              bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300
+                              {% else %}
+                              text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white
+                              {% endif %}">
+                        Links
+                    </a>
+                    <a href="/links/add"
+                       class="px-3 py-2 rounded-md text-sm font-medium transition-colors
+                              {% if active_page == 'add' %}
+                              bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300
+                              {% else %}
+                              text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white
+                              {% endif %}">
+                        Add Link
+                    </a>
+                    <a href="/crawl"
+                       class="px-3 py-2 rounded-md text-sm font-medium transition-colors
+                              {% if active_page == 'crawl' %}
+                              bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300
+                              {% else %}
+                              text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white
+                              {% endif %}">
+                        Crawl
+                    </a>
+                    <a href="/db"
+                       class="px-3 py-2 rounded-md text-sm font-medium transition-colors
+                              {% if active_page == 'database' %}
+                              bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300
+                              {% else %}
+                              text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white
+                              {% endif %}">
+                        Database
+                    </a>
+                </div>
+            </div>
+
+            <!-- Right side: Search shortcut and mobile menu -->
+            <div class="flex items-center space-x-2">
+                <!-- Search shortcut (desktop) -->
+                <a href="/search"
+                   class="hidden sm:flex items-center px-3 py-1.5 text-sm text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 rounded-md hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                   title="Quick search">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                    <span class="text-slate-400 dark:text-slate-500">/</span>
+                </a>
+
+                <!-- Mobile menu button -->
+                <button type="button"
+                        id="mobile-menu-button"
+                        class="md:hidden inline-flex items-center justify-center p-2 rounded-md text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white transition-colors"
+                        aria-controls="mobile-menu"
+                        aria-expanded="false">
+                    <span class="sr-only">Open main menu</span>
+                    <!-- Hamburger icon -->
+                    <svg class="block h-6 w-6" id="menu-icon-open" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                    </svg>
+                    <!-- Close icon -->
+                    <svg class="hidden h-6 w-6" id="menu-icon-close" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile Navigation Menu -->
+    <div class="hidden md:hidden" id="mobile-menu">
+        <div class="px-2 pt-2 pb-3 space-y-1 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700">
+            <a href="/search"
+               class="block px-3 py-2 rounded-md text-base font-medium transition-colors
+                      {% if active_page == 'search' %}
+                      bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300
+                      {% else %}
+                      text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white
+                      {% endif %}">
+                <span class="flex items-center">
+                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                    Search
+                </span>
+            </a>
+            <a href="/links"
+               class="block px-3 py-2 rounded-md text-base font-medium transition-colors
+                      {% if active_page == 'links' %}
+                      bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300
+                      {% else %}
+                      text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white
+                      {% endif %}">
+                <span class="flex items-center">
+                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
+                    </svg>
+                    Links
+                </span>
+            </a>
+            <a href="/links/add"
+               class="block px-3 py-2 rounded-md text-base font-medium transition-colors
+                      {% if active_page == 'add' %}
+                      bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300
+                      {% else %}
+                      text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white
+                      {% endif %}">
+                <span class="flex items-center">
+                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                    </svg>
+                    Add Link
+                </span>
+            </a>
+            <a href="/crawl"
+               class="block px-3 py-2 rounded-md text-base font-medium transition-colors
+                      {% if active_page == 'crawl' %}
+                      bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300
+                      {% else %}
+                      text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white
+                      {% endif %}">
+                <span class="flex items-center">
+                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                    Crawl
+                </span>
+            </a>
+            <a href="/db"
+               class="block px-3 py-2 rounded-md text-base font-medium transition-colors
+                      {% if active_page == 'database' %}
+                      bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300
+                      {% else %}
+                      text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white
+                      {% endif %}">
+                <span class="flex items-center">
+                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
+                    </svg>
+                    Database
+                </span>
+            </a>
+        </div>
+    </div>
+</nav>
+
+<!-- Mobile menu toggle script -->
+<script>
+    (function() {
+        const button = document.getElementById('mobile-menu-button');
+        const menu = document.getElementById('mobile-menu');
+        const iconOpen = document.getElementById('menu-icon-open');
+        const iconClose = document.getElementById('menu-icon-close');
+
+        if (button && menu) {
+            button.addEventListener('click', function() {
+                const isExpanded = button.getAttribute('aria-expanded') === 'true';
+
+                button.setAttribute('aria-expanded', !isExpanded);
+                menu.classList.toggle('hidden');
+                iconOpen.classList.toggle('hidden');
+                iconOpen.classList.toggle('block');
+                iconClose.classList.toggle('hidden');
+                iconClose.classList.toggle('block');
+            });
+        }
+    })();
+</script>

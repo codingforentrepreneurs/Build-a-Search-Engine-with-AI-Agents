@@ -1,0 +1,167 @@
+{#
+  Link row partial - used in link list table/cards
+  Expects: link (dict with id, url, title, added_at, crawled_at, http_status, crawl_error, hidden)
+#}
+
+{# Desktop table row #}
+<tr id="link-row-{{ link.id }}"
+    class="hidden md:table-row border-b border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors {% if link.hidden %}opacity-50{% endif %}">
+
+    {# Title/URL column #}
+    <td class="px-4 py-3">
+        <div class="flex flex-col">
+            <a href="/links/{{ link.id }}"
+               class="font-medium text-slate-900 dark:text-slate-100 hover:text-primary-600 dark:hover:text-primary-400 transition-colors {% if link.hidden %}line-through{% endif %}"
+               title="{{ link.title or link.url }}">
+                {% if link.title %}
+                    {{ link.title[:60] }}{% if link.title|length > 60 %}...{% endif %}
+                {% else %}
+                    <span class="text-slate-500 dark:text-slate-400 italic">No title</span>
+                {% endif %}
+            </a>
+            <a href="{{ link.url }}"
+               target="_blank"
+               rel="noopener noreferrer"
+               class="text-sm text-slate-500 dark:text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 truncate max-w-md"
+               title="{{ link.url }}">
+                {{ link.url[:50] }}{% if link.url|length > 50 %}...{% endif %}
+            </a>
+        </div>
+    </td>
+
+    {# Added date column #}
+    <td class="px-4 py-3 text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">
+        {% if link.added_at %}
+            <span title="{{ link.added_at }}">{{ link.added_at_relative or link.added_at[:10] }}</span>
+        {% else %}
+            <span class="text-slate-400 dark:text-slate-500">-</span>
+        {% endif %}
+    </td>
+
+    {# Crawl status column #}
+    <td class="px-4 py-3 whitespace-nowrap">
+        {% if link.crawl_error %}
+            {# Error state #}
+            <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" title="{{ link.crawl_error }}">
+                <span class="text-red-500">&#10005;</span>
+                Error
+            </span>
+        {% elif link.crawled_at %}
+            {# Successfully crawled #}
+            <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" title="Crawled: {{ link.crawled_at }}">
+                <span class="text-green-500">&#10003;</span>
+                Crawled
+            </span>
+        {% else %}
+            {# Never crawled #}
+            <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
+                <span class="text-yellow-500">&#9201;</span>
+                Pending
+            </span>
+        {% endif %}
+    </td>
+
+    {# Actions column #}
+    <td class="px-4 py-3 text-right whitespace-nowrap">
+        <div class="flex items-center justify-end gap-2">
+            {# View button #}
+            <a href="/links/{{ link.id }}"
+               class="inline-flex items-center px-2 py-1 text-sm text-slate-600 dark:text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+               title="View details">
+                View
+            </a>
+
+            {# Hide/Unhide toggle #}
+            <button hx-post="/links/{{ link.id }}/toggle-hidden"
+                    hx-target="#link-row-{{ link.id }}"
+                    hx-swap="outerHTML"
+                    class="inline-flex items-center px-2 py-1 text-sm text-slate-600 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
+                    title="{% if link.hidden %}Unhide{% else %}Hide{% endif %}">
+                {% if link.hidden %}Unhide{% else %}Hide{% endif %}
+            </button>
+
+            {# Delete button #}
+            <button hx-delete="/links/{{ link.id }}"
+                    hx-target="#link-row-{{ link.id }}"
+                    hx-swap="outerHTML swap:0.3s"
+                    hx-confirm="Are you sure you want to delete this link?"
+                    class="inline-flex items-center px-2 py-1 text-sm text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                    title="Delete">
+                Delete
+            </button>
+        </div>
+    </td>
+</tr>
+
+{# Mobile card view #}
+<div id="link-card-{{ link.id }}"
+     class="md:hidden bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-4 {% if link.hidden %}opacity-50{% endif %}">
+
+    {# Title and URL #}
+    <div class="mb-3">
+        <a href="/links/{{ link.id }}"
+           class="block font-medium text-slate-900 dark:text-slate-100 hover:text-primary-600 dark:hover:text-primary-400 transition-colors {% if link.hidden %}line-through{% endif %}">
+            {% if link.title %}
+                {{ link.title[:50] }}{% if link.title|length > 50 %}...{% endif %}
+            {% else %}
+                <span class="text-slate-500 dark:text-slate-400 italic">No title</span>
+            {% endif %}
+        </a>
+        <a href="{{ link.url }}"
+           target="_blank"
+           rel="noopener noreferrer"
+           class="block text-sm text-slate-500 dark:text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 truncate"
+           title="{{ link.url }}">
+            {{ link.url[:40] }}{% if link.url|length > 40 %}...{% endif %}
+        </a>
+    </div>
+
+    {# Status and date row #}
+    <div class="flex items-center justify-between mb-3">
+        {# Crawl status #}
+        {% if link.crawl_error %}
+            <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                <span class="text-red-500">&#10005;</span>
+                Error
+            </span>
+        {% elif link.crawled_at %}
+            <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                <span class="text-green-500">&#10003;</span>
+                Crawled
+            </span>
+        {% else %}
+            <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
+                <span class="text-yellow-500">&#9201;</span>
+                Pending
+            </span>
+        {% endif %}
+
+        {# Added date #}
+        <span class="text-xs text-slate-500 dark:text-slate-400">
+            {% if link.added_at %}
+                {{ link.added_at_relative or link.added_at[:10] }}
+            {% endif %}
+        </span>
+    </div>
+
+    {# Action buttons #}
+    <div class="flex items-center gap-2 pt-3 border-t border-slate-200 dark:border-slate-700">
+        <a href="/links/{{ link.id }}"
+           class="flex-1 text-center px-3 py-2 text-sm font-medium text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded transition-colors">
+            View
+        </a>
+        <button hx-post="/links/{{ link.id }}/toggle-hidden"
+                hx-target="#link-card-{{ link.id }}"
+                hx-swap="outerHTML"
+                class="flex-1 text-center px-3 py-2 text-sm font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded transition-colors">
+            {% if link.hidden %}Unhide{% else %}Hide{% endif %}
+        </button>
+        <button hx-delete="/links/{{ link.id }}"
+                hx-target="#link-card-{{ link.id }}"
+                hx-swap="outerHTML swap:0.3s"
+                hx-confirm="Are you sure you want to delete this link?"
+                class="flex-1 text-center px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors">
+            Delete
+        </button>
+    </div>
+</div>

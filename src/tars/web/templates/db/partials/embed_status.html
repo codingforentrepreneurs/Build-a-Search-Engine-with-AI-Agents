@@ -1,0 +1,26 @@
+<!-- Embed Status Partial -->
+<div id="embed-status" {% if progress.state == 'RUNNING' %}hx-get="/db/vector/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+    {% if progress.state == 'IDLE' %}
+    <div class="text-center py-4 text-slate-500 dark:text-slate-400">
+        <p>Ready to generate embeddings</p>
+    </div>
+    {% elif progress.state == 'RUNNING' %}
+    <div class="space-y-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+        <div class="flex items-center justify-between">
+            <span class="text-sm font-medium text-blue-700 dark:text-blue-300">Generating embeddings...</span>
+            <span class="text-sm text-blue-600 dark:text-blue-400">{{ progress.completed }} / {{ progress.total }}</span>
+        </div>
+        <div class="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2">
+            <div class="bg-blue-500 h-2 rounded-full transition-all" style="width: {{ (progress.completed / progress.total * 100) if progress.total > 0 else 0 }}%"></div>
+        </div>
+    </div>
+    {% elif progress.state == 'COMPLETED' %}
+    <div class="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+        <p class="text-green-700 dark:text-green-300">Embedding completed: {{ progress.success }} succeeded, {{ progress.errors }} failed</p>
+    </div>
+    {% elif progress.state == 'ERROR' %}
+    <div class="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">
+        <p class="text-red-700 dark:text-red-300">Embedding generation failed</p>
+    </div>
+    {% endif %}
+</div>

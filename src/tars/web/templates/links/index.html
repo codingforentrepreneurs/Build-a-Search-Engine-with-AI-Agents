@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block title %}Your Links - tars{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    {# Page header #}
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900 dark:text-slate-100">Your Links</h1>
+            <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                {% if total_count %}
+                    {{ total_count }} link{% if total_count != 1 %}s{% endif %} in your collection
+                {% else %}
+                    No links yet
+                {% endif %}
+            </p>
+        </div>
+        <a href="/links/add"
+           class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg shadow-sm transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+            </svg>
+            Add Link
+        </a>
+    </div>
+
+    {# Filter controls #}
+    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-4">
+        <form method="get" action="/links" class="flex flex-col sm:flex-row gap-4">
+            {# Show hidden checkbox #}
+            <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox"
+                       name="show_hidden"
+                       value="true"
+                       {% if show_hidden %}checked{% endif %}
+                       onchange="this.form.submit()"
+                       class="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-primary-600 focus:ring-primary-500 dark:bg-slate-700">
+                <span class="text-sm text-slate-700 dark:text-slate-300">Show hidden</span>
+            </label>
+
+            {# Crawl status filter #}
+            <div class="flex items-center gap-2">
+                <label for="crawl_status" class="text-sm text-slate-700 dark:text-slate-300">Status:</label>
+                <select name="crawl_status"
+                        id="crawl_status"
+                        onchange="this.form.submit()"
+                        class="text-sm rounded-lg border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-primary-500 focus:border-primary-500">
+                    <option value="all" {% if crawl_status == 'all' %}selected{% endif %}>All</option>
+                    <option value="crawled" {% if crawl_status == 'crawled' %}selected{% endif %}>Crawled</option>
+                    <option value="pending" {% if crawl_status == 'pending' %}selected{% endif %}>Pending</option>
+                    <option value="error" {% if crawl_status == 'error' %}selected{% endif %}>Error</option>
+                </select>
+            </div>
+
+            {# Results count #}
+            {% if filtered_count is defined and filtered_count != total_count %}
+                <span class="text-sm text-slate-500 dark:text-slate-400 sm:ml-auto">
+                    Showing {{ filtered_count }} of {{ total_count }}
+                </span>
+            {% endif %}
+        </form>
+    </div>
+
+    {# Links list #}
+    {% if links %}
+        {# Desktop table view #}
+        <div class="hidden md:block bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+            <table class="w-full">
+                <thead class="bg-slate-50 dark:bg-slate-800/50">
+                    <tr class="border-b border-slate-200 dark:border-slate-700">
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                            Title / URL
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                            Added
+                        </th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                            Status
+                        </th>
+                        <th class="px-4 py-3 text-right text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                            Actions
+                        </th>
+                    </tr>
+                </thead>
+                <tbody id="links-table-body">
+                    {% for link in links %}
+                        {% include "partials/link_row.html" %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {# Mobile card view #}
+        <div class="md:hidden space-y-3" id="links-card-list">
+            {% for link in links %}
+                {% include "partials/link_row.html" %}
+            {% endfor %}
+        </div>
+
+        {# Pagination #}
+        {% if total_pages > 1 %}
+            <div class="flex items-center justify-center gap-2">
+                {# Previous page #}
+                {% if page > 1 %}
+                    <a href="?page={{ page - 1 }}{% if show_hidden %}&show_hidden=true{% endif %}{% if crawl_status and crawl_status != 'all' %}&crawl_status={{ crawl_status }}{% endif %}"
+                       class="px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+                        Previous
+                    </a>
+                {% else %}
+                    <span class="px-3 py-2 text-sm font-medium text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg cursor-not-allowed">
+                        Previous
+                    </span>
+                {% endif %}
+
+                {# Page numbers #}
+                <div class="hidden sm:flex items-center gap-1">
+                    {% for page_num in range(1, total_pages + 1) %}
+                        {% if page_num == page %}
+                            <span class="px-3 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg">
+                                {{ page_num }}
+                            </span>
+                        {% elif page_num == 1 or page_num == total_pages or (page_num >= page - 2 and page_num <= page + 2) %}
+                            <a href="?page={{ page_num }}{% if show_hidden %}&show_hidden=true{% endif %}{% if crawl_status and crawl_status != 'all' %}&crawl_status={{ crawl_status }}{% endif %}"
+                               class="px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+                                {{ page_num }}
+                            </a>
+                        {% elif page_num == page - 3 or page_num == page + 3 %}
+                            <span class="px-2 text-slate-400">...</span>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+
+                {# Mobile page indicator #}
+                <span class="sm:hidden px-3 py-2 text-sm text-slate-600 dark:text-slate-400">
+                    {{ page }} / {{ total_pages }}
+                </span>
+
+                {# Next page #}
+                {% if page < total_pages %}
+                    <a href="?page={{ page + 1 }}{% if show_hidden %}&show_hidden=true{% endif %}{% if crawl_status and crawl_status != 'all' %}&crawl_status={{ crawl_status }}{% endif %}"
+                       class="px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+                        Next
+                    </a>
+                {% else %}
+                    <span class="px-3 py-2 text-sm font-medium text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg cursor-not-allowed">
+                        Next
+                    </span>
+                {% endif %}
+            </div>
+        {% endif %}
+
+    {% else %}
+        {# Empty state #}
+        <div class="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 p-12 text-center">
+            <div class="mx-auto w-16 h-16 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center mb-4">
+                <svg class="w-8 h-8 text-slate-400 dark:text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
+                </svg>
+            </div>
+            <h3 class="text-lg font-medium text-slate-900 dark:text-slate-100 mb-2">No links yet</h3>
+            <p class="text-slate-600 dark:text-slate-400 mb-6">Add your first link to get started!</p>
+            <a href="/links/add"
+               class="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg shadow-sm transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                </svg>
+                Add your first link
+            </a>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
