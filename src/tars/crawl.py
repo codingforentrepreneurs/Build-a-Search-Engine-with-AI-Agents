@@ -1,6 +1,8 @@
 """Crawling functionality using Playwright."""
 
 import asyncio
+import subprocess
+import sys
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlparse
 
@@ -9,6 +11,56 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 console = Console()
+
+
+def _ensure_browsers_installed() -> bool:
+    """Check if Playwright browsers are installed, install if missing.
+
+    Returns True if browsers are ready, False if installation failed.
+    """
+    try:
+        # Quick check: try to get browser executable path
+        from playwright._impl._driver import compute_driver_executable
+        driver_executable, _ = compute_driver_executable()
+
+        # Run playwright install check
+        result = subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def _install_browsers_if_needed(error: Exception) -> bool:
+    """Check if error is due to missing browsers and install them.
+
+    Returns True if browsers were installed successfully.
+    """
+    error_msg = str(error).lower()
+
+    # Check for common Playwright browser missing errors
+    if "executable doesn't exist" in error_msg or "playwright install" in error_msg:
+        console.print("  [yellow]Browser not installed. Installing chromium...[/yellow]")
+
+        result = subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        if result.returncode == 0:
+            console.print("  [green]Browser installed successfully![/green]")
+            return True
+        else:
+            console.print(f"  [red]Failed to install browser:[/red] {result.stderr}")
+            return False
+
+    return False
 
 
 @dataclass
@@ -85,7 +137,7 @@ async def extract_page_content_async(page: Page) -> tuple[str | None, str | None
     return title, description, content
 
 
-async def crawl_page_async(url: str) -> CrawlResult:
+async def crawl_page_async(url: str, _retry_after_install: bool = True) -> CrawlResult:
     """Crawl a single page and extract its content (async version). Falls back to HTTP if HTTPS fails."""
     result = CrawlResult(url=url)
 
@@ -134,6 +186,11 @@ async def crawl_page_async(url: str) -> CrawlResult:
 
     except Exception as e:
         last_error = e
+
+        # Check if this is a browser missing error and try to install
+        if _retry_after_install and _install_browsers_if_needed(e):
+            # Retry crawl after installing browsers
+            return await crawl_page_async(url, _retry_after_install=False)
 
     if last_error:
         result.error = str(last_error)
@@ -213,7 +270,7 @@ async def extract_links_async(page: Page, base_url: str) -> list[str]:
     return sorted(links)
 
 
-async def crawl_page_for_links_async(url: str, max_pages: int) -> list[str]:
+async def crawl_page_for_links_async(url: str, max_pages: int, _retry_after_install: bool = True) -> list[str]:
     """
     Crawl a single page and extract internal links (async version).
 
@@ -255,6 +312,11 @@ async def crawl_page_for_links_async(url: str, max_pages: int) -> list[str]:
             await browser.close()
 
     except Exception as e:
+        # Check if this is a browser missing error and try to install
+        if _retry_after_install and _install_browsers_if_needed(e):
+            # Retry crawl after installing browsers
+            return await crawl_page_for_links_async(url, max_pages, _retry_after_install=False)
+
         console.print(f"[red]Crawl error:[/red] {e}")
         return []
 

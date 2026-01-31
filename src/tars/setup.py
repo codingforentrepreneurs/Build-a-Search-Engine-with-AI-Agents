@@ -291,51 +291,82 @@ def run_setup() -> None:
 
     console.print()
 
-    # Step 4: Install Playwright browsers (needed for crawling)
+    # Step 4: Install and verify Playwright browsers (needed for crawling)
     console.print("[bold]Step 4:[/bold] Installing browser for crawling")
-    console.print("  [dim]Running playwright install chromium...[/dim]")
 
     import subprocess
+    import sys
 
-    # Try multiple methods to install Playwright browsers
-    # The tool runs in an isolated uv tool environment, so we need to install
-    # browsers for THAT environment specifically
+    def install_browsers() -> bool:
+        """Install Playwright browsers using multiple methods."""
+        console.print("  [dim]Running playwright install chromium...[/dim]")
 
-    result = None
-
-    if name != "tars":
-        # Method 1: Install via the tool's isolated environment (most important!)
+        # Method 1: Use python -m playwright (most reliable)
         result = subprocess.run(
-            ["uv", "tool", "run", name, "python", "-m", "playwright", "install", "chromium"],
+            [sys.executable, "-m", "playwright", "install", "chromium"],
             capture_output=True,
             text=True,
+            timeout=120,
         )
+        if result.returncode == 0:
+            return True
 
-    if result is None or result.returncode != 0:
-        # Method 2: Use uv run (works in project context for 'tars')
+        # Method 2: Use uv run
         result = subprocess.run(
             ["uv", "run", "playwright", "install", "chromium"],
             capture_output=True,
             text=True,
+            timeout=120,
         )
+        return result.returncode == 0
 
-    if result.returncode != 0:
-        # Method 3: Try direct playwright command
-        result = subprocess.run(
-            ["playwright", "install", "chromium"],
-            capture_output=True,
-            text=True,
-        )
+    def verify_browser() -> tuple[bool, str]:
+        """Verify browser works by doing a test launch."""
+        console.print("  [dim]Verifying browser works...[/dim]")
+        try:
+            # Quick test: launch and close browser
+            verify_script = """
+import asyncio
+from playwright.async_api import async_playwright
 
-    if result.returncode == 0:
-        console.print("  [green]Browser installed[/green]\n")
-    else:
-        console.print("  [yellow]Warning:[/yellow] Could not install browser automatically.")
-        console.print("  [yellow]Run this manually:[/yellow]")
-        if name != "tars":
-            console.print(f"    [dim]uv tool run {name} python -m playwright install chromium[/dim]\n")
+async def test():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        await browser.close()
+    return True
+
+asyncio.run(test())
+"""
+            result = subprocess.run(
+                [sys.executable, "-c", verify_script],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode == 0:
+                return True, "OK"
+            return False, result.stderr.strip()
+        except subprocess.TimeoutExpired:
+            return False, "Browser launch timed out"
+        except Exception as e:
+            return False, str(e)
+
+    # Try install + verify, with one retry
+    max_attempts = 2
+    for attempt in range(1, max_attempts + 1):
+        install_browsers()
+
+        success, error = verify_browser()
+        if success:
+            console.print("  [green]Browser installed and verified![/green]\n")
+            break
+
+        if attempt < max_attempts:
+            console.print(f"  [yellow]Browser verification failed, retrying...[/yellow]")
         else:
-            console.print(f"    [dim]uv run playwright install chromium[/dim]\n")
+            console.print("  [yellow]Warning:[/yellow] Browser installation could not be verified.")
+            console.print(f"  [dim]Error: {error}[/dim]")
+            console.print("  [yellow]Crawling will auto-install browsers on first use.[/yellow]\n")
 
     # Done!
     console.print(Panel(
