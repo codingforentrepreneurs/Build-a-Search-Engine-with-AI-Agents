@@ -131,7 +131,7 @@ def _show_overview() -> bool:
     console.print(Panel(
         "[bold cyan]tars setup wizard[/bold cyan]\n\n"
         "This wizard will:\n"
-        "  [bold]1.[/bold] Choose a name for your bot (optional rename)\n"
+        "  [bold]1.[/bold] Choose a name for your bot (+ install globally)\n"
         "  [bold]2.[/bold] Configure your database connection\n"
         "  [bold]3.[/bold] Initialize database schema and vector search\n\n"
         "[bold yellow]Files that may be modified:[/bold yellow]\n"
@@ -139,11 +139,11 @@ def _show_overview() -> bool:
         "  • [cyan]pyproject.toml[/cyan] - Package name (if renaming)\n"
         "  • [cyan]README.md, CLAUDE.md[/cyan] - Documentation (if renaming)\n"
         "  • [cyan]src/tars/*.py[/cyan] - Source files (if renaming)\n\n"
-        "[bold yellow]Recovery if something goes wrong:[/bold yellow]\n"
+        "[bold yellow]Recovery / Uninstall:[/bold yellow]\n"
         "  • Reset all changes: [dim]git checkout .[/dim]\n"
         "  • Re-run setup: [dim]uv run tars setup[/dim]\n"
-        "  • Manual DB init: [dim]uv run tars db init[/dim]\n"
-        "  • Manual vector init: [dim]uv run tars db vector init[/dim]",
+        "  • Uninstall command: [dim]uv tool uninstall <name>[/dim]\n"
+        "  • Manual DB init: [dim]uv run tars db init[/dim]",
         title="Setup Overview",
         style="cyan",
     ))
@@ -183,7 +183,21 @@ def run_setup() -> None:
     if name != "tars":
         console.print(f"\n  Renaming bot to [cyan]{name}[/cyan]...")
         results = rename_bot(name)
-        console.print(f"  [green]Done![/green] Updated {results['files']} file(s)\n")
+        console.print(f"  [green]Done![/green] Updated {results['files']} file(s)")
+
+        # Reinstall package to register new command
+        console.print(f"  [dim]Installing '{name}' command globally...[/dim]")
+        import subprocess
+        result = subprocess.run(
+            ["uv", "tool", "install", "-e", ".", "--force"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            console.print(f"  [green]Command '{name}' is now available globally[/green]\n")
+        else:
+            console.print(f"  [yellow]Warning:[/yellow] Could not install globally. Run manually:")
+            console.print(f"    [dim]uv tool install -e . --force[/dim]\n")
     else:
         console.print()
 
@@ -282,7 +296,8 @@ def run_setup() -> None:
         f"Try these commands:\n"
         f"  [cyan]{name} add https://example.com[/cyan]\n"
         f"  [cyan]{name} search \"hello\"[/cyan]\n"
-        f"  [cyan]{name} help[/cyan]",
+        f"  [cyan]{name} help[/cyan]\n\n"
+        f"[dim]To uninstall: uv tool uninstall {name}[/dim]",
         title="Success",
         style="green",
     ))
