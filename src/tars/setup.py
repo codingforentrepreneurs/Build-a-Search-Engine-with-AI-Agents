@@ -214,7 +214,7 @@ def run_setup() -> None:
     url = None
     while True:
         if url is None:
-            url = Prompt.ask("  Paste your DATABASE_URL")
+            url = Prompt.ask("  Paste your DATABASE_URL", password=True)
 
         if not validate_database_url(url):
             console.print("  [red]Invalid URL format.[/red] Should start with postgresql:// or postgres://")
