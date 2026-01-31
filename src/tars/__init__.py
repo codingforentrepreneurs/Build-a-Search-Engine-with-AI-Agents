@@ -432,6 +432,31 @@ def hybrid_search(
         console.print(f"\n[dim]Page {page}/{total_pages} ({total_count} total results)[/dim]")
 
 
+def _install_web_dependencies() -> bool:
+    """Install web dependencies (FastAPI, uvicorn, jinja2, python-multipart).
+
+    Returns True if installation succeeded.
+    """
+    import subprocess
+
+    console.print("[yellow]Installing web dependencies...[/yellow]")
+    packages = ["fastapi", "uvicorn[standard]", "jinja2", "python-multipart"]
+
+    result = subprocess.run(
+        [sys.executable, "-m", "pip", "install"] + packages,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+    if result.returncode == 0:
+        console.print("[green]Web dependencies installed successfully![/green]")
+        return True
+    else:
+        console.print(f"[red]Failed to install dependencies:[/red] {result.stderr}")
+        return False
+
+
 def start_web_server(
     host: str = "127.0.0.1",
     port: int = 8000,
@@ -442,16 +467,23 @@ def start_web_server(
     try:
         import uvicorn
     except ImportError:
-        console.print("[red]Error:[/red] uvicorn not installed.")
-        console.print("Install with: pip install 'uvicorn[standard]'")
-        return
+        if not _install_web_dependencies():
+            return
+        import uvicorn
 
     try:
         from tars.web import app
         if app is None:
-            console.print("[red]Error:[/red] FastAPI dependencies not installed.")
-            console.print("Install with: pip install fastapi jinja2 python-multipart")
-            return
+            if not _install_web_dependencies():
+                return
+            # Reimport after install
+            import importlib
+            import tars.web
+            importlib.reload(tars.web)
+            from tars.web import app
+            if app is None:
+                console.print("[red]Error:[/red] Failed to load web module after install.")
+                return
     except ImportError as e:
         console.print(f"[red]Error:[/red] Failed to import web module: {e}")
         return

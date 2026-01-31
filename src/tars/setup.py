@@ -319,23 +319,17 @@ def run_setup() -> None:
     import subprocess
     import sys
 
+    # Get the tool's isolated Python (uv tools install to ~/.local/share/uv/tools/)
+    from pathlib import Path
+    tool_python = Path.home() / ".local" / "share" / "uv" / "tools" / name / "bin" / "python"
+    python_exe = str(tool_python) if tool_python.exists() else sys.executable
+
     def install_browsers() -> bool:
-        """Install Playwright browsers using multiple methods."""
+        """Install Playwright browsers for the tool's isolated environment."""
         console.print("  [dim]Running playwright install chromium...[/dim]")
 
-        # Method 1: Use python -m playwright (most reliable)
         result = subprocess.run(
-            [sys.executable, "-m", "playwright", "install", "chromium"],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        if result.returncode == 0:
-            return True
-
-        # Method 2: Use uv run
-        result = subprocess.run(
-            ["uv", "run", "playwright", "install", "chromium"],
+            [python_exe, "-m", "playwright", "install", "chromium"],
             capture_output=True,
             text=True,
             timeout=120,
@@ -360,7 +354,7 @@ async def test():
 asyncio.run(test())
 """
             result = subprocess.run(
-                [sys.executable, "-c", verify_script],
+                [python_exe, "-c", verify_script],
                 capture_output=True,
                 text=True,
                 timeout=30,
