@@ -298,25 +298,31 @@ def run_setup() -> None:
     import subprocess
 
     # Try multiple methods to install Playwright browsers
-    # Method 1: Use uv run (works in project context)
-    result = subprocess.run(
-        ["uv", "run", "playwright", "install", "chromium"],
-        capture_output=True,
-        text=True,
-    )
+    # The tool runs in an isolated uv tool environment, so we need to install
+    # browsers for THAT environment specifically
 
-    if result.returncode != 0:
-        # Method 2: Try direct playwright command
+    result = None
+
+    if name != "tars":
+        # Method 1: Install via the tool's isolated environment (most important!)
         result = subprocess.run(
-            ["playwright", "install", "chromium"],
+            ["uv", "tool", "run", name, "python", "-m", "playwright", "install", "chromium"],
+            capture_output=True,
+            text=True,
+        )
+
+    if result is None or result.returncode != 0:
+        # Method 2: Use uv run (works in project context for 'tars')
+        result = subprocess.run(
+            ["uv", "run", "playwright", "install", "chromium"],
             capture_output=True,
             text=True,
         )
 
     if result.returncode != 0:
-        # Method 3: Try python -m playwright
+        # Method 3: Try direct playwright command
         result = subprocess.run(
-            ["python", "-m", "playwright", "install", "chromium"],
+            ["playwright", "install", "chromium"],
             capture_output=True,
             text=True,
         )
@@ -325,9 +331,11 @@ def run_setup() -> None:
         console.print("  [green]Browser installed[/green]\n")
     else:
         console.print("  [yellow]Warning:[/yellow] Could not install browser automatically.")
-        console.print("  [yellow]Run one of these manually:[/yellow]")
-        console.print(f"    [dim]uv run playwright install chromium[/dim]")
-        console.print(f"    [dim]{name} crawl[/dim] (will show install instructions)\n")
+        console.print("  [yellow]Run this manually:[/yellow]")
+        if name != "tars":
+            console.print(f"    [dim]uv tool run {name} python -m playwright install chromium[/dim]\n")
+        else:
+            console.print(f"    [dim]uv run playwright install chromium[/dim]\n")
 
     # Done!
     console.print(Panel(
