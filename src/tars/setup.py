@@ -296,16 +296,38 @@ def run_setup() -> None:
     console.print("  [dim]Running playwright install chromium...[/dim]")
 
     import subprocess
+
+    # Try multiple methods to install Playwright browsers
+    # Method 1: Use uv run (works in project context)
     result = subprocess.run(
-        ["playwright", "install", "chromium"],
+        ["uv", "run", "playwright", "install", "chromium"],
         capture_output=True,
         text=True,
     )
+
+    if result.returncode != 0:
+        # Method 2: Try direct playwright command
+        result = subprocess.run(
+            ["playwright", "install", "chromium"],
+            capture_output=True,
+            text=True,
+        )
+
+    if result.returncode != 0:
+        # Method 3: Try python -m playwright
+        result = subprocess.run(
+            ["python", "-m", "playwright", "install", "chromium"],
+            capture_output=True,
+            text=True,
+        )
+
     if result.returncode == 0:
         console.print("  [green]Browser installed[/green]\n")
     else:
-        console.print("  [yellow]Warning:[/yellow] Could not install browser. Run manually:")
-        console.print("    [dim]playwright install chromium[/dim]\n")
+        console.print("  [yellow]Warning:[/yellow] Could not install browser automatically.")
+        console.print("  [yellow]Run one of these manually:[/yellow]")
+        console.print(f"    [dim]uv run playwright install chromium[/dim]")
+        console.print(f"    [dim]{name} crawl[/dim] (will show install instructions)\n")
 
     # Done!
     console.print(Panel(
