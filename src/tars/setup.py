@@ -342,8 +342,10 @@ def run_setup() -> None:
         f"[green]Setup complete![/green]\n\n"
         f"Try these commands:\n"
         f"  [cyan]{name} add 'https://grokipedia.com/page/Interstellar_(film)'[/cyan]\n"
-        f"  [cyan]{name} search \"hello\"[/cyan]\n"
-        f"  [cyan]{name} help[/cyan]\n\n"
+        f"  [cyan]{name} crawl[/cyan]\n"
+        f"  [cyan]{name} search \"interstellar\"[/cyan]\n"
+        f"  [cyan]{name} web[/cyan]\n"
+        f"  [cyan]{name} mcp[/cyan]\n\n"
         f"[dim]To uninstall: uv tool uninstall {name}[/dim]",
         title="Success",
         style="green",
