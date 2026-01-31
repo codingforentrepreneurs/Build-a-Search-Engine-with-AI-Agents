@@ -133,7 +133,8 @@ def _show_overview() -> bool:
         "This wizard will:\n"
         "  [bold]1.[/bold] Choose a name for your bot (+ install globally)\n"
         "  [bold]2.[/bold] Configure your database connection\n"
-        "  [bold]3.[/bold] Initialize database schema and vector search\n\n"
+        "  [bold]3.[/bold] Initialize database schema and vector search\n"
+        "  [bold]4.[/bold] Install browser for web crawling\n\n"
         "[bold yellow]Files that may be modified:[/bold yellow]\n"
         "  • [cyan].env[/cyan] - Database connection string\n"
         "  • [cyan]pyproject.toml[/cyan] - Package name (if renaming)\n"
@@ -289,6 +290,22 @@ def run_setup() -> None:
     db_init_vectorizer()
 
     console.print()
+
+    # Step 4: Install Playwright browsers (needed for crawling)
+    console.print("[bold]Step 4:[/bold] Installing browser for crawling")
+    console.print("  [dim]Running playwright install chromium...[/dim]")
+
+    import subprocess
+    result = subprocess.run(
+        ["playwright", "install", "chromium"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        console.print("  [green]Browser installed[/green]\n")
+    else:
+        console.print("  [yellow]Warning:[/yellow] Could not install browser. Run manually:")
+        console.print("    [dim]playwright install chromium[/dim]\n")
 
     # Done!
     console.print(Panel(
