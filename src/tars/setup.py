@@ -72,6 +72,25 @@ RESERVED_NAMES = {
 }
 
 
+def _is_uv_tool(name: str) -> bool:
+    """Check if a command is installed as a uv tool."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["uv", "tool", "list"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        # uv tool list output format: "name vX.X.X"
+        for line in result.stdout.splitlines():
+            if line.startswith(f"{name} "):
+                return True
+        return False
+    except Exception:
+        return False
+
+
 def _check_name_available(name: str) -> tuple[bool, str]:
     """Check if a bot name is available (not conflicting with system commands).
 
@@ -93,8 +112,11 @@ def _check_name_available(name: str) -> tuple[bool, str]:
     if len(name) > 32:
         return (False, "Name must be 32 characters or less")
 
-    # Check if command exists in PATH (but allow 'tars' since that's the current name)
+    # Check if command exists in PATH (but allow 'tars' and existing uv tools)
     if name_lower != "tars" and shutil.which(name):
+        # Allow if it's already a uv tool (user is re-running setup)
+        if _is_uv_tool(name):
+            return (True, "OK")
         return (False, f"'{name}' already exists as a command on your system")
 
     return (True, "OK")
